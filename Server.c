@@ -224,7 +224,6 @@ int main (void) {
     // Respond to client:
     strcpy(server_message, "Success!");
 
-    
     if (send(client_sock, server_message, strlen(server_message), 0) < 0){
         printf("Can't send\n");
     }

@@ -11,12 +11,13 @@
 
 /**
  * @brief Write the file from the socket descriptor as a stream
- * To the specified file name
+ * to the specified file name.
  * 
  * @param sockfd The socket descriptor
+ * @param path The file path
  * @return int 
  */
-int write_file(int sockDesc, char* path) {
+int write_file(int sockDesc, char* filepath) {
     int n; 
     FILE *fp;
     int totalBytes;
@@ -31,7 +32,7 @@ int write_file(int sockDesc, char* path) {
     bzero(buffer, SIZE);
 
     // Open file for writing
-    fp = fopen(path, "w");
+    fp = fopen(filepath, "w");
 
     // Error opening file to write
     if(fp==NULL) {
@@ -96,8 +97,21 @@ int main (void) {
         return -1;
     }
 
-    int res = write_file(socket_desc, "./clientRoot/test.txt");
+    // Parse the input string to get the path
+    char* path;
+    char* restOfInput = client_message;
+    strtok_r(restOfInput, " ", &restOfInput);
+    path = strtok_r(restOfInput, " ", &restOfInput);
 
+    // Root of the client file system
+    char root[] = "clientRoot/";
+    // Combine the root and the input path
+    char* combined= strcat(root, path);
+
+    // Write the stream to the file path described in input
+    int res = write_file(socket_desc, combined);
+
+    // Was write successful?
     if (res == 1) {
         printf("Successfully written the file.\n");
     } else if (res == 0) {
