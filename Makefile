@@ -1,15 +1,17 @@
-SERVER = Server
-CLIENT = Client
+SERVER = server
+CLIENT = client
+FILEFUNCS = filefuncs
 
-all: $(SERVER).c $(CLIENT).c
-	gcc $(SERVER).c -o $(SERVER)
-	gcc $(CLIENT).c -o $(CLIENT)
+all: $(SERVER).c $(CLIENT).c $(FILEFUNCS).c $(FILEFUNCS).h
+	gcc $(SERVER).c $(FILEFUNCS).c -o $(SERVER)
+	gcc $(CLIENT).c $(FILEFUNCS).c -o $(CLIENT)
 
-server: $(SERVER).c
+ser: $(SEVER)
 	./$(SERVER)
 
-client: $(CLIENT).c
+cli: $(CLIENT)
 	./$(CLIENT)
 
 clean:
 	rm $(SERVER) $(CLIENT)
+	rm clientRoot/*

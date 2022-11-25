@@ -6,51 +6,20 @@
 #include <sys/stat.h>
 #include <arpa/inet.h>
 
-#define SIZE 2000
-#define TERMINATE "END##"
+#include "filefuncs.h"
 
-/**
- * @brief Write the file from the socket descriptor as a stream
- * to the specified file name.
- * 
- * @param sockfd The socket descriptor
- * @param path The file path
- * @return int 
- */
-int write_file(int sockDesc, char* filepath) {
-    int n; 
-    FILE *fp;
-    int totalBytes;
-    char buffer[SIZE];
+int getFileFromServer(char* thePath, int socket_desc) {
+    // Root of the client file system
+    char cliRoot[] = "clientRoot/";
+    // Combine the root and the input path
+    char* combined = (char*)malloc(strlen(cliRoot) + strlen(thePath) + 1); 
+    combined = strcat(cliRoot, thePath);
+    printf("Combined file path: %s\n", combined);
 
-    // Get the file size. Server should send this first
-    recv(sockDesc, buffer, SIZE, 0);
-    // Parse to an integer
-    int fSize = atoi(buffer);
-    printf("File Size: %d\n", fSize);
-    // Clear out the buffer
-    bzero(buffer, SIZE);
+    // Write the stream to the file path described in input
+    int res = write_file(socket_desc, "clientRoot/test.txt");
 
-    // Open file for writing
-    fp = fopen(filepath, "w");
-
-    // Error opening file to write
-    if(fp==NULL) {
-        return 0;
-    }
-    // Loop and write bytes to the file as big as file size
-    totalBytes = fSize;
-    while(totalBytes > 0) {
-        n = recv(sockDesc, buffer, SIZE, 0);
-        if(n <= 0) { // || strncmp("END##", buffer, strlen("END##")) == 0) {
-            break;
-        }
-        fprintf(fp, "%s", buffer);
-        totalBytes -= strlen(buffer);
-        bzero(buffer, SIZE);
-        printf("Bytes left: %d\n", totalBytes);
-    }
-    return 1;
+    return 0;
 }
 
 int main (void) {
@@ -96,20 +65,26 @@ int main (void) {
         printf("Unable to send message\n");
         return -1;
     }
+    // Parse client input
+    FileSystemOp_t* theRequest = parseClientInput(client_message);
+    printf("Request: %s\nOperation: %s\n", theRequest->operation, theRequest->filePath);
 
-    // Parse the input string to get the path
-    char* path;
-    char* restOfInput = client_message;
-    strtok_r(restOfInput, " ", &restOfInput);
-    path = strtok_r(restOfInput, " ", &restOfInput);
+    
+    // TODO: IF ELSE TO BRANCH TO DIFFERENT FUNCTIONS FOR THE
+    // TODO: DIFFERENT METHODS
+    int res = -1;
+    if (strncmp("GET", theRequest->operation, strlen("GET")) == 0) {
+        res = getFileFromServer(theRequest->filePath, socket_desc);
+    }
 
     // Root of the client file system
-    char root[] = "clientRoot/";
-    // Combine the root and the input path
-    char* combined= strcat(root, path);
+    // char cliRoot[] = "clientRoot/";
+    // // Combine the root and the input path
+    // char* combined= strcat(cliRoot, theRequest->filePath);
+    // printf("Combined file path: %s\n", combined);
 
-    // Write the stream to the file path described in input
-    int res = write_file(socket_desc, combined);
+    // // Write the stream to the file path described in input
+    // int res = write_file(socket_desc, combined);
 
     // Was write successful?
     if (res == 1) {
@@ -118,13 +93,16 @@ int main (void) {
         printf("Failed writing file.\n");
     }
     
-    // Receive the server's response:
+    // Receive the server's response
     if(recv(socket_desc, server_message, sizeof(server_message), 0) < 0){
         printf("Error while receiving server's msg\n");
         return -1;
     }
     
     printf("Server's response: %s\n",server_message);
+
+    // Free the malloced operation struct
+    free(theRequest);
 
     printf("Closing the socket.\n");
     // Close the socket:

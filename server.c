@@ -7,15 +7,14 @@
 #include <fcntl.h>
 #include <arpa/inet.h>
 
-#define SIZE 2000
-#define TERMINATE "END##"
+#include "filefuncs.h"
 
-typedef struct FileSystemOp {
-    char* operation;
-    // Array of strings of the file path
-    char* filePath;
-} FileSystemOp_t;
-
+/**
+ * @brief Get the File Stats object
+ * 
+ * @param fileName The path to the file
+ * @return struct stat Stat object containing file statistics
+ */
 struct stat getFileStats(char* fileName) {
     struct stat file_stat;
     int fileDesc;
@@ -38,8 +37,24 @@ struct stat getFileStats(char* fileName) {
  * @param socketFD The socket's file descriptor
  * @return int 0 if failed 1 if successful 
  */
-int sendFile(FILE *fp, int socketFD) {
-    struct stat fileStats = getFileStats("./serverRoot/test.txt");
+int sendFile(char* filePath, int socketFD) {
+    //TODO: CHANGE THIS
+    char* fileName = "./server1Root/test.txt";
+    // The file pointer
+    FILE* fp;
+    // Server root folder
+    char serverRoot[] = "server1Root/";
+
+    // Try to open the file
+    fp = fopen(fileName, "r");
+    if (fp == NULL) {
+        printf("Error reading the file. Probably wrong path.\n");
+        return 0;
+    }
+    
+    char* combined = strcat(serverRoot, filePath);
+    printf("Filepath: %s\n", combined);
+    struct stat fileStats = getFileStats(combined);
 
     int fileSize = fileStats.st_size;
     if (fileSize == -1) {
@@ -68,42 +83,6 @@ int sendFile(FILE *fp, int socketFD) {
     // send(socketFD, data, sizeof(data), 0);
     // bzero(data, SIZE);
     return 1;
-}
-
-/**
- * @brief Parse the client's input string into the operation and filepath
- * Format example is "GET folder/text.txt"
- * GET, INFO, PUT, MD, RM
- * 
- * @param input 
- * @return FileSystemOp_t* 
- */
-FileSystemOp_t* parseClientInput(char* input) {
-    printf("Parsing.\n");
-    FileSystemOp_t* theOperation = malloc(sizeof(FileSystemOp_t));
-    // Should be the operation to do like GET or INFO
-    char* operation;
-    char* rest = input;
-    operation = strtok_r(rest, " ", &rest);
-
-    printf("Compare: %d\n", strcmp("GET", operation));
-
-    // If entered command is not one of the 5 commands, return NULL
-    if (!strcmp("GET", operation)  == 0 &&
-        !strcmp("INFO", operation) == 0 &&
-        !strcmp("PUT", operation)  == 0 && 
-        !strcmp("MD", operation)   == 0 && 
-        !strcmp("RM", operation)   == 0) {
-        return NULL;
-    }
-
-    theOperation->operation = operation;
-    printf("Entered Operation: %s\n", theOperation->operation);
-
-    char* path = strtok_r(rest, " ", &rest);
-    theOperation->filePath = path;
-    printf("Entered Path: %s\n", theOperation->filePath);
-    return theOperation;
 }
 
 /**
@@ -176,17 +155,7 @@ int main (void) {
     }
     printf("Client connected at IP: %s and port: %i\n", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
     
-    //TODO: CHANGE THIS
-    char* fileName = "./serverRoot/test.txt";
-    // The file pointer
-    FILE* fp;
-
-    fp = fopen(fileName, "r");
-    if (fp == NULL) {
-        printf("Error reading the file. Probably wrong path\n");
-        exit(1);
-    }
-
+    
     // Receive client's message:
     if (recv(client_sock, client_message, sizeof(client_message), 0) < 0){
         printf("Couldn't receive\n");
@@ -204,31 +173,45 @@ int main (void) {
         message = "Invalid client input. Nothing done!\n";
     }
 
+    //================================
+
+    // Dispatch appropriate function
+
+    //================================
+
     // Check if GET, send file if it is
     int res = -1;
-    if (strncmp("GET", client_message, strlen("GET")) == 0) {
-        res = sendFile(fp, client_sock);
+
+    if (strncmp("GET", op->operation, strlen("GET")) == 0) {
+        printf("GET Request\n");
+        res = sendFile(op->filePath, client_sock);
+    } else if (strncmp("INFO", op->operation, strlen("INFO"))) {
+        printf("INFO Request\n");
     }
 
     if (res == -1) {
-        printf("Client didn't respond with GET\n");
-        message = "Client didn't respond with GET\n";
+        printf("Client didn't respond with appropriate action!\n");
+        message = "Unknown request!\n";
     } else if (res == 0) {
-        printf("Error sending file to client.\n");
-        message = "Error sending file to client.";
+        printf("Error with %s request!\n", op->operation);
+        message = "Error with request\n";
     } else {
-        printf("Successfully sent file to client!\n");
-        message = "Successfully sent file to client!";
+        printf("Successful %s request!\n", op->operation);
+        message = "Successful request!";
     }
     
-    // Respond to client:
-    strcpy(server_message, "Success!");
+    // Copy message into the buffer
+    strcpy(server_message, message);
 
+    // Send the response buffer to the client
     if (send(client_sock, server_message, strlen(server_message), 0) < 0){
-        printf("Can't send\n");
+        printf("Can't send response to client!\n");
     }
+
+    // Free operation struct
+    free(op);
+    // Closing the socket
     printf("Closing connection.\n");
-    // Closing the socket:
     close(client_sock);
     close(socket_desc);
 
