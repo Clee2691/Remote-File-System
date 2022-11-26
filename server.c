@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include <time.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -11,23 +12,91 @@
 
 /**
  * @brief Get the File Stats object
+ *  
+ * mode_t    st_mode;     protection - S_IFDIR - directory, S_IFREG -reg file
+ * uid_t     st_uid;      user ID of owner 
+ * off_t     st_size;     total size, in bytes 
+ * time_t    st_atime;    time of last access 
+ * time_t    st_mtime;    time of last modification 
+ * time_t    st_ctime;    time of last status change 
  * 
  * @param fileName The path to the file
  * @return struct stat Stat object containing file statistics
  */
 struct stat getFileStats(char* fileName) {
-    struct stat file_stat;
+    struct stat fileStat;
     int fileDesc;
 
     fileDesc = open(fileName, O_RDONLY);
-    if (fstat(fileDesc, &file_stat) < 0)
+    if (fstat(fileDesc, &fileStat) < 0)
     {
-        printf("Failed getting file stats.");
-        file_stat.st_size = -1;
+        printf("Failed getting stats for file: %s.\n", fileName);
+        fileStat.st_size = -1;
     }
+
+    return fileStat;
+}
+
+/**
+ * @brief 
+ * 
+ * @param filePath 
+ * @param socketFD 
+ * @return int 
+ */
+int sendFileStat(char* filePath, int socketFD) {
+    char infoBuffer[SIZE];
+    char serverRoot[] = "server1Root/";
+    char* combined = (char*)malloc(strlen(serverRoot) + strlen(filePath) + 1);
+    strcat(combined, serverRoot);
+    strcat(combined, filePath);
+
+    // Get the file stats
+    struct stat fileStat = getFileStats(combined);
+
+    // Is it a directory or a file?
+    if (S_ISDIR(fileStat.st_mode)) {
+        printf("Directory\n");
+        strcat(infoBuffer, "Directory\n");
+    } else if (S_ISREG(fileStat.st_mode)) {
+        printf("File\n");
+        strcat(infoBuffer, "File\n");
+    }
+
     // The file size
-    printf("File size: %ld\n", file_stat.st_size);
-    return file_stat;
+    char size[SIZE];
+    snprintf(size, SIZE, "Size: %ld bytes\n", fileStat.st_size);
+    printf("Size: %ld\n", fileStat.st_size);
+    strcat(infoBuffer, size);
+    strcat(infoBuffer, "Permissions: \t");
+    printf("Permissions: \t");
+    printf( (S_ISDIR(fileStat.st_mode)) ? "d" : "-");
+    printf( (fileStat.st_mode & S_IRUSR) ? "r" : "-");
+    printf( (fileStat.st_mode & S_IWUSR) ? "w" : "-");
+    printf( (fileStat.st_mode & S_IXUSR) ? "x" : "-");
+    printf( (fileStat.st_mode & S_IRGRP) ? "r" : "-");
+    printf( (fileStat.st_mode & S_IWGRP) ? "w" : "-");
+    printf( (fileStat.st_mode & S_IXGRP) ? "x" : "-");
+    printf( (fileStat.st_mode & S_IROTH) ? "r" : "-");
+    printf( (fileStat.st_mode & S_IWOTH) ? "w" : "-");
+    printf( (fileStat.st_mode & S_IXOTH) ? "x" : "-");
+    printf("\n");
+
+    char permissions[SIZE];
+    //TODO: MAKE PERMISSION STRING TO SEND TO CLIENT
+    //TODO: ALSO MAKE TIME CHANGES
+    
+    printf("Last status change:       %s\n", ctime(&fileStat.st_ctime));
+    printf("Last file access:         %s\n", ctime(&fileStat.st_atime));
+    printf("Last file modification:   %s\n", ctime(&fileStat.st_mtime));
+
+    if (send(socketFD, infoBuffer, sizeof(infoBuffer), 0) == -1) {
+        return 1;
+    }
+    // Clear out the data buffer after each loop
+    bzero(infoBuffer, SIZE);
+
+    return 0;
 }
 
 /**
@@ -35,34 +104,43 @@ struct stat getFileStats(char* fileName) {
  * 
  * @param fp The file pointer
  * @param socketFD The socket's file descriptor
- * @return int 0 if failed 1 if successful 
+ * @return int 0 if successful 1 if failed 
  */
 int sendFile(char* filePath, int socketFD) {
-    //TODO: CHANGE THIS
-    char* fileName = "./server1Root/test.txt";
     // The file pointer
     FILE* fp;
-    // Server root folder
-    char serverRoot[] = "server1Root/";
-
-    // Try to open the file
-    fp = fopen(fileName, "r");
-    if (fp == NULL) {
-        printf("Error reading the file. Probably wrong path.\n");
-        return 0;
-    }
-    
-    char* combined = strcat(serverRoot, filePath);
-    printf("Filepath: %s\n", combined);
-    struct stat fileStats = getFileStats(combined);
-
-    int fileSize = fileStats.st_size;
-    if (fileSize == -1) {
-        printf("Could not get file data!\n");
-    }
-
     // The data buffer initialized to 0s
     char data[SIZE] = {0};
+
+    // Combine the root to the filepath
+    char serverRoot[] = "server1Root/";
+    char* combined = (char*)malloc(strlen(serverRoot) + strlen(filePath) + 1);
+    strcat(combined, serverRoot);
+    strcat(combined, filePath);
+
+    // Try to open the file
+    fp = fopen(combined, "r");
+    // No file found
+    if (fp == NULL) {
+        char* message = "NOTFOUND";
+        printf("Error, file at path '%s' not found!\n", combined);
+        strcpy(data, message);
+        send(socketFD, data, sizeof(data), 0);
+        bzero(data, SIZE);
+        return 1;
+    }
+
+    // Get the file statistics
+    struct stat fileStats = getFileStats(combined);
+
+    // Only need the file size to send the correct aomunt of bytes
+    int fileSize = fileStats.st_size;
+
+    // Error getting file stats
+    if (fileSize == -1) {
+        printf("Could not get file data! Probably doesn't exist.\n");
+        return 1;
+    }   
 
     // Send the file size in bytes
     sprintf(data, "%d", fileSize);
@@ -74,7 +152,7 @@ int sendFile(char* filePath, int socketFD) {
     int size = 0;
     while(fgets(data, SIZE, fp) != NULL) {
         if (send(socketFD, data, sizeof(data), 0) == -1) {
-            return 0;
+            return 1;
         }
         // Clear out the data buffer after each loop
         bzero(data, SIZE);
@@ -82,7 +160,23 @@ int sendFile(char* filePath, int socketFD) {
     // strncpy(data, TERMINATE, sizeof(TERMINATE));
     // send(socketFD, data, sizeof(data), 0);
     // bzero(data, SIZE);
-    return 1;
+    return 0;
+}
+
+/**
+ * @brief Clean up sockets descriptors and free malloced data
+ * 
+ * @param op FileSystemOp_t object
+ * @param client_sock The client socket
+ * @param socket_desc The socket descriptor
+ */
+void cleanUp(FileSystemOp_t* op, int client_sock, int socket_desc) {
+        // Free operation struct
+    free(op);
+    // Closing the socket
+    printf("Closing connection.\n");
+    close(client_sock);
+    close(socket_desc);
 }
 
 /**
@@ -91,6 +185,13 @@ int sendFile(char* filePath, int socketFD) {
  * @return int 1 or 0
  */
 int main (void) {
+
+    // Create a root directory for the server on initial launch if not there
+    struct stat st = {0};
+    if (stat("server1Root", &st) == -1) {
+        mkdir("server1Root", 0777);
+    }
+
     int socket_desc;
     int client_sock;
     int client_size;
@@ -111,7 +212,7 @@ int main (void) {
     // Failed creating a socket
     if(socket_desc < 0){
         printf("Error creating socket\n");
-        return -1;
+        return 1;
     }
 
     // Set address and port reuse so that I can continue running this program multiple times
@@ -133,7 +234,7 @@ int main (void) {
     // Bind to the set port and IP:
     if(bind(socket_desc, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0){
         printf("Couldn't bind to the port\n");
-        return -1;
+        return 1;
     }
 
     printf("Done with binding\n");
@@ -141,7 +242,7 @@ int main (void) {
     // Listen for clients:
     if(listen(socket_desc, 1) < 0){
         printf("Error while listening\n");
-        return -1;
+        return 1;
     }
     printf("\nListening for incoming connections.....\n");
     
@@ -151,15 +252,20 @@ int main (void) {
     
     if (client_sock < 0){
         printf("Can't accept\n");
-        return -1;
+        return 1;
     }
     printf("Client connected at IP: %s and port: %i\n", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
     
     
-    // Receive client's message:
+    //=============================
+
+    //    Get client's action
+
+    //=============================
+
     if (recv(client_sock, client_message, sizeof(client_message), 0) < 0){
-        printf("Couldn't receive\n");
-        return -1;
+        printf("Couldn't receive client message\n");
+        return 1;
     }
     printf("Msg from client: %s\n", client_message);
     printf("Length of message: %ld\n", strlen(client_message));
@@ -168,9 +274,21 @@ int main (void) {
 
     char* message;
 
+    // Invalid parsed operation
     if(op == NULL) {
-        printf("Invalid client input. Nothing done!\n");
-        message = "Invalid client input. Nothing done!\n";
+        printf("Invalid client input. Improperly formatted or path name too long!\n");
+        message = "Invalid client input. Improperly formatted or path name too long!\n";
+
+        // Copy message into the buffer
+        strcpy(server_message, message);
+
+        // Send the response buffer to the client
+        if (send(client_sock, server_message, strlen(server_message), 0) < 0){
+            printf("Can't send response to client!\n");
+        }
+
+        cleanUp(op, client_sock, socket_desc);
+        return 1;
     }
 
     //================================
@@ -179,20 +297,23 @@ int main (void) {
 
     //================================
 
-    // Check if GET, send file if it is
     int res = -1;
 
+    // Check the operation against supported operations
     if (strncmp("GET", op->operation, strlen("GET")) == 0) {
         printf("GET Request\n");
-        res = sendFile(op->filePath, client_sock);
-    } else if (strncmp("INFO", op->operation, strlen("INFO"))) {
+        res = sendFile(op->path, client_sock);
+    } else if (strncmp("INFO", op->operation, strlen("INFO")) == 0) {
         printf("INFO Request\n");
+        res = sendFileStat(op->path, client_sock);
+    } else {
+        printf("Unsupported action!\n");
     }
 
     if (res == -1) {
-        printf("Client didn't respond with appropriate action!\n");
+        printf("Client didn't respond with supported action!\n");
         message = "Unknown request!\n";
-    } else if (res == 0) {
+    } else if (res == 1) {
         printf("Error with %s request!\n", op->operation);
         message = "Error with request\n";
     } else {
@@ -208,12 +329,6 @@ int main (void) {
         printf("Can't send response to client!\n");
     }
 
-    // Free operation struct
-    free(op);
-    // Closing the socket
-    printf("Closing connection.\n");
-    close(client_sock);
-    close(socket_desc);
-
+    cleanUp(op, client_sock, socket_desc);
     return 0;
 }

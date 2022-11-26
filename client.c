@@ -8,23 +8,73 @@
 
 #include "filefuncs.h"
 
+/**
+ * @brief Get the File From Server object
+ * 
+ * @param thePath The path to the file
+ * @param socket_desc The socket descriptor
+ * @return int 0 if successful, 1 if failed.
+ */
 int getFileFromServer(char* thePath, int socket_desc) {
-    // Root of the client file system
-    char cliRoot[] = "clientRoot/";
     // Combine the root and the input path
-    char* combined = (char*)malloc(strlen(cliRoot) + strlen(thePath) + 1); 
-    combined = strcat(cliRoot, thePath);
-    printf("Combined file path: %s\n", combined);
+    char* combined = (char*)malloc(strlen(CLIENTROOT) + strlen(thePath) + 1);
+    strcat(combined, CLIENTROOT);
+    strcat(combined, thePath);
 
     // Write the stream to the file path described in input
-    int res = write_file(socket_desc, "clientRoot/test.txt");
+    return write_file(socket_desc, combined);
+}
 
+/**
+ * @brief Get the Info From Server object
+ * 
+ * @param thePath 
+ * @param socket_desc 
+ * @return int 0 if successful, 1 if failed
+ */
+int getInfoFromServer(char* thePath, int socket_desc) {
+    char fileInfoBuffer[SIZE] = {0};
+    // Receive the server's response
+    if(recv(socket_desc, fileInfoBuffer, sizeof(fileInfoBuffer), 0) < 0){
+        printf("Error while receiving server's msg\n");
+        return 1;
+    }
+    printf("\nInformation:\n\n%s", fileInfoBuffer);
+    bzero(fileInfoBuffer, SIZE);
     return 0;
 }
 
+/**
+ * @brief Clean up sockets and malloced data
+ * 
+ * @param theRequest 
+ * @param socket_desc 
+ */
+void cleanUp(FileSystemOp_t* theRequest, int socket_desc) {
+    // Free the malloced operation struct
+    free(theRequest);
+
+    printf("Closing the socket.\n");
+    // Close the socket:
+    close(socket_desc);
+}
+
+/**
+ * @brief The entry point for the client
+ * 
+ * @return int 0 or 1
+ */
 int main (void) {
+    // Create a root directory for the client on initial launch if not there
+    struct stat st = {0};
+    if (stat("clientRoot", &st) == -1) {
+        mkdir("clientRoot", 0777);
+    }
+
+    // Start of connection
     int socket_desc;
     struct sockaddr_in server_addr;
+
     char server_message[SIZE];
     char client_message[SIZE];
     
@@ -37,7 +87,7 @@ int main (void) {
     
     if(socket_desc < 0){
         printf("Unable to create socket\n");
-        return -1;
+        return 1;
     }
     
     printf("Socket created successfully\n");
@@ -50,7 +100,7 @@ int main (void) {
     // Send connection request to server:
     if(connect(socket_desc, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0){
         printf("Unable to connect\n");
-        return -1;
+        return 1;
     }
     printf("Connected with server successfully\n");
     
@@ -63,49 +113,40 @@ int main (void) {
     // Send the message to server:
     if(send(socket_desc, client_message, strlen(client_message), 0) < 0){
         printf("Unable to send message\n");
-        return -1;
+        return 1;
     }
     // Parse client input
     FileSystemOp_t* theRequest = parseClientInput(client_message);
-    printf("Request: %s\nOperation: %s\n", theRequest->operation, theRequest->filePath);
-
+    if (theRequest == NULL) {
+        printf("Entered unsupported or not correctly formatted request!\n");
+        cleanUp(theRequest, socket_desc);
+        return 1;
+    }
     
     // TODO: IF ELSE TO BRANCH TO DIFFERENT FUNCTIONS FOR THE
     // TODO: DIFFERENT METHODS
     int res = -1;
     if (strncmp("GET", theRequest->operation, strlen("GET")) == 0) {
-        res = getFileFromServer(theRequest->filePath, socket_desc);
+        res = getFileFromServer(theRequest->path, socket_desc);
+    } else if (strncmp("INFO", theRequest->operation, strlen("INFO")) == 0) {
+        res = getInfoFromServer(theRequest->path, socket_desc);
     }
 
-    // Root of the client file system
-    // char cliRoot[] = "clientRoot/";
-    // // Combine the root and the input path
-    // char* combined= strcat(cliRoot, theRequest->filePath);
-    // printf("Combined file path: %s\n", combined);
-
-    // // Write the stream to the file path described in input
-    // int res = write_file(socket_desc, combined);
-
     // Was write successful?
-    if (res == 1) {
-        printf("Successfully written the file.\n");
-    } else if (res == 0) {
-        printf("Failed writing file.\n");
+    if (res == 0) {
+        printf("Successful request!\n");
+    } else if (res == 1) {
+        printf("Failed request!\n");
     }
     
     // Receive the server's response
     if(recv(socket_desc, server_message, sizeof(server_message), 0) < 0){
         printf("Error while receiving server's msg\n");
-        return -1;
+        return 1;
     }
     
     printf("Server's response: %s\n",server_message);
 
-    // Free the malloced operation struct
-    free(theRequest);
-
-    printf("Closing the socket.\n");
-    // Close the socket:
-    close(socket_desc);
+    cleanUp(theRequest, socket_desc);
     return 0;
 }
