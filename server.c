@@ -45,7 +45,7 @@ struct stat getFileStats(char* fileName) {
  * @return int 
  */
 int sendFileStat(char* filePath, int socketFD) {
-    char infoBuffer[SIZE];
+    char infoBuffer[SIZE] = {0};
     char serverRoot[] = "server1Root/";
     char* combined = (char*)malloc(strlen(serverRoot) + strlen(filePath) + 1);
     strcat(combined, serverRoot);
@@ -56,19 +56,21 @@ int sendFileStat(char* filePath, int socketFD) {
 
     // Is it a directory or a file?
     if (S_ISDIR(fileStat.st_mode)) {
-        printf("Directory\n");
-        strcat(infoBuffer, "Directory\n");
+        printf("Type: Directory\n");
+        strcat(infoBuffer, "Type: Directory\n");
     } else if (S_ISREG(fileStat.st_mode)) {
-        printf("File\n");
-        strcat(infoBuffer, "File\n");
+        printf("Type: File\n");
+        strcat(infoBuffer, "Type: File\n");
     }
 
     // The file size
-    char size[SIZE];
+    char size[SIZE] = {0};
     snprintf(size, SIZE, "Size: %ld bytes\n", fileStat.st_size);
     printf("Size: %ld\n", fileStat.st_size);
-    strcat(infoBuffer, size);
-    strcat(infoBuffer, "Permissions: \t");
+
+    strncat(infoBuffer, size, strlen(size) + 1);
+    strncat(infoBuffer, "Permissions: \t", strlen("Permissions: \t") + 1);
+
     printf("Permissions: \t");
     printf( (S_ISDIR(fileStat.st_mode)) ? "d" : "-");
     printf( (fileStat.st_mode & S_IRUSR) ? "r" : "-");
@@ -82,13 +84,19 @@ int sendFileStat(char* filePath, int socketFD) {
     printf( (fileStat.st_mode & S_IXOTH) ? "x" : "-");
     printf("\n");
 
-    char permissions[SIZE];
+    char perms[SIZE] = {0};
     //TODO: MAKE PERMISSION STRING TO SEND TO CLIENT
     //TODO: ALSO MAKE TIME CHANGES
     
+    strncat(perms, (S_ISDIR(fileStat.st_mode)) ? "d\n" : "-\n", 4);
+
     printf("Last status change:       %s\n", ctime(&fileStat.st_ctime));
     printf("Last file access:         %s\n", ctime(&fileStat.st_atime));
     printf("Last file modification:   %s\n", ctime(&fileStat.st_mtime));
+
+    strncat(infoBuffer, perms, strlen(perms));
+
+    printf("Final info: %s\n", infoBuffer);
 
     if (send(socketFD, infoBuffer, sizeof(infoBuffer), 0) == -1) {
         return 1;
