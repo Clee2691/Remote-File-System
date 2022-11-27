@@ -10,16 +10,24 @@
 
 /**
  * @brief Get the File From Server object
- * 
- * @param thePath The path to the file
+ *
  * @param socket_desc The socket descriptor
+ * @param fileName The file name to get
  * @return int 0 if successful, 1 if failed.
  */
-int getFileFromServer(char* thePath, int socket_desc) {
-    // Combine the root and the input path
-    char* combined = (char*)malloc(strlen(CLIENTROOT) + strlen(thePath) + 1);
+int getFileFromServer(int socket_desc, char* fileName) {
+    // Check if downloads folder exists
+    struct stat st = {0};
+    if (stat("clientRoot/downloads", &st) == -1) {
+        mkdir("clientRoot/downloads", 0777);
+    }
+
+    // Combine the root and the file name
+    // Download all files into the downloads folder
+    char combined[SIZE] = {0};
     strcat(combined, CLIENTROOT);
-    strcat(combined, thePath);
+    strcat(combined, "downloads/");
+    strcat(combined, fileName);
 
     // Write the stream to the file path described in input
     return write_file(socket_desc, combined);
@@ -28,7 +36,7 @@ int getFileFromServer(char* thePath, int socket_desc) {
 /**
  * @brief Get the Info From Server object
  * 
- * @param thePath 
+ * @param thePath
  * @param socket_desc 
  * @return int 0 if successful, 1 if failed
  */
@@ -122,12 +130,14 @@ int main (void) {
         cleanUp(theRequest, socket_desc);
         return 1;
     }
-    
-    // TODO: IF ELSE TO BRANCH TO DIFFERENT FUNCTIONS FOR THE
-    // TODO: DIFFERENT METHODS
+
+    char fname[SIZE] = {0};
+    int arraySize = theRequest->pathSize - 1;
+    strncpy(fname, theRequest->pathArray[arraySize], strlen(theRequest->pathArray[arraySize]));
+
     int res = -1;
     if (strncmp("GET", theRequest->operation, strlen("GET")) == 0) {
-        res = getFileFromServer(theRequest->path, socket_desc);
+        res = getFileFromServer(socket_desc, fname);
     } else if (strncmp("INFO", theRequest->operation, strlen("INFO")) == 0) {
         res = getInfoFromServer(theRequest->path, socket_desc);
     }

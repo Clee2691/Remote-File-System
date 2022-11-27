@@ -38,72 +38,81 @@ struct stat getFileStats(char* fileName) {
 }
 
 /**
- * @brief 
+ * @brief Send file or directory statistics to the client
  * 
- * @param filePath 
- * @param socketFD 
- * @return int 
+ * @param filePath The file or directory path
+ * @param socketFD The clients socket
+ * @return int 0 if successful, 1 if not
  */
 int sendFileStat(char* filePath, int socketFD) {
     char infoBuffer[SIZE] = {0};
     char serverRoot[] = "server1Root/";
-    char* combined = (char*)malloc(strlen(serverRoot) + strlen(filePath) + 1);
+    char combined[SIZE] = {0};
     strcat(combined, serverRoot);
-    strcat(combined, filePath);
+    strncat(combined, filePath, strlen(filePath));
 
     // Get the file stats
     struct stat fileStat = getFileStats(combined);
 
     // Is it a directory or a file?
     if (S_ISDIR(fileStat.st_mode)) {
-        printf("Type: Directory\n");
         strcat(infoBuffer, "Type: Directory\n");
     } else if (S_ISREG(fileStat.st_mode)) {
-        printf("Type: File\n");
         strcat(infoBuffer, "Type: File\n");
     }
 
     // The file size
     char size[SIZE] = {0};
     snprintf(size, SIZE, "Size: %ld bytes\n", fileStat.st_size);
-    printf("Size: %ld\n", fileStat.st_size);
 
+    // Concat file size into the buffer
     strncat(infoBuffer, size, strlen(size) + 1);
-    strncat(infoBuffer, "Permissions: \t", strlen("Permissions: \t") + 1);
-
-    printf("Permissions: \t");
-    printf( (S_ISDIR(fileStat.st_mode)) ? "d" : "-");
-    printf( (fileStat.st_mode & S_IRUSR) ? "r" : "-");
-    printf( (fileStat.st_mode & S_IWUSR) ? "w" : "-");
-    printf( (fileStat.st_mode & S_IXUSR) ? "x" : "-");
-    printf( (fileStat.st_mode & S_IRGRP) ? "r" : "-");
-    printf( (fileStat.st_mode & S_IWGRP) ? "w" : "-");
-    printf( (fileStat.st_mode & S_IXGRP) ? "x" : "-");
-    printf( (fileStat.st_mode & S_IROTH) ? "r" : "-");
-    printf( (fileStat.st_mode & S_IWOTH) ? "w" : "-");
-    printf( (fileStat.st_mode & S_IXOTH) ? "x" : "-");
-    printf("\n");
+    strcat(infoBuffer, "Permissions: ");
 
     char perms[SIZE] = {0};
-    //TODO: MAKE PERMISSION STRING TO SEND TO CLIENT
-    //TODO: ALSO MAKE TIME CHANGES
-    
-    strncat(perms, (S_ISDIR(fileStat.st_mode)) ? "d\n" : "-\n", 4);
+    // Concat permissions to the permission buffer
+    strcat(perms, (S_ISDIR(fileStat.st_mode)) ? "d" : "-");
+    strcat(perms, (fileStat.st_mode & S_IRUSR) ? "r" : "-");
+    strcat(perms, (fileStat.st_mode & S_IWUSR) ? "w" : "-");
+    strcat(perms, (fileStat.st_mode & S_IXUSR) ? "x" : "-");
+    strcat(perms, (fileStat.st_mode & S_IRGRP) ? "r" : "-");
+    strcat(perms, (fileStat.st_mode & S_IWGRP) ? "w" : "-");
+    strcat(perms, (fileStat.st_mode & S_IXGRP) ? "x" : "-");
+    strcat(perms, (fileStat.st_mode & S_IROTH) ? "r" : "-");
+    strcat(perms, (fileStat.st_mode & S_IWOTH) ? "w" : "-");
+    strcat(perms, (fileStat.st_mode & S_IXOTH) ? "x\n" : "-\n");
 
-    printf("Last status change:       %s\n", ctime(&fileStat.st_ctime));
-    printf("Last file access:         %s\n", ctime(&fileStat.st_atime));
-    printf("Last file modification:   %s\n", ctime(&fileStat.st_mtime));
-
+    // Concat all into the buffer
     strncat(infoBuffer, perms, strlen(perms));
 
-    printf("Final info: %s\n", infoBuffer);
+    char statusChange[SIZE] = {0};
+    char lastFileAccess[SIZE] = {0};
+    char lastFileModification[SIZE] = {0};
 
+    // Concat the timing to the buffer
+    snprintf(statusChange, SIZE, 
+            "Last status change: %s", 
+            ctime(&fileStat.st_ctime));
+
+    snprintf(lastFileAccess, SIZE, 
+            "Last file access: %s", 
+            ctime(&fileStat.st_atime));
+
+    snprintf(lastFileModification, SIZE, 
+            "Last file modification: %s\n", 
+            ctime(&fileStat.st_mtime));
+    
+    strncat(infoBuffer, statusChange, strlen(statusChange));
+    strncat(infoBuffer, lastFileAccess, strlen(lastFileAccess));
+    strncat(infoBuffer, lastFileModification, strlen(lastFileModification));
+
+    // Send info to the client
     if (send(socketFD, infoBuffer, sizeof(infoBuffer), 0) == -1) {
         return 1;
     }
+
     // Clear out the data buffer after each loop
     bzero(infoBuffer, SIZE);
-
     return 0;
 }
 
@@ -122,23 +131,12 @@ int sendFile(char* filePath, int socketFD) {
 
     // Combine the root to the filepath
     char serverRoot[] = "server1Root/";
-    char* combined = (char*)malloc(strlen(serverRoot) + strlen(filePath) + 1);
+    // char* combined = (char*)malloc(strlen(serverRoot) + strlen(filePath) + 1);
+    char combined[SIZE] = {0};
     strcat(combined, serverRoot);
-    strcat(combined, filePath);
+    strncat(combined, filePath, strlen(filePath));
 
-    // Try to open the file
-    fp = fopen(combined, "r");
-    // No file found
-    if (fp == NULL) {
-        char* message = "NOTFOUND";
-        printf("Error, file at path '%s' not found!\n", combined);
-        strcpy(data, message);
-        send(socketFD, data, sizeof(data), 0);
-        bzero(data, SIZE);
-        return 1;
-    }
-
-    // Get the file statistics
+        // Get the file statistics
     struct stat fileStats = getFileStats(combined);
 
     // Only need the file size to send the correct aomunt of bytes
@@ -147,8 +145,30 @@ int sendFile(char* filePath, int socketFD) {
     // Error getting file stats
     if (fileSize == -1) {
         printf("Could not get file data! Probably doesn't exist.\n");
+        char* message = "NOTFOUND";
+        strcpy(data, message);
+        send(socketFD, data, sizeof(data), 0);
+        bzero(data, SIZE);
         return 1;
-    }   
+    }
+
+    // If it is not a file, nothing to send
+    if (!S_ISREG(fileStats.st_mode)) {
+        printf("Not a file!\n");
+        char* message = "NOTFILE";
+        strcpy(data, message);
+        send(socketFD, data, sizeof(data), 0);
+        bzero(data, SIZE);
+        return 1;
+    }
+
+    // Try to open the file
+    fp = fopen(combined, "r");
+    // No file found
+    if (fp == NULL) {
+        printf("Error, file at path '%s' not found!\n", combined);
+        return 1;
+    }
 
     // Send the file size in bytes
     sprintf(data, "%d", fileSize);

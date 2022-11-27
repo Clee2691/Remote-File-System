@@ -13,16 +13,15 @@ int parseFilePath(char* fullPath, char* patharr[]) {
     char* rest = fullPath;
     // Get the first folder or file
     patharr[i] = strtok_r(rest, "/", &rest);
-    printf("Name %d: %s\n", i, patharr[i]);
+    // printf("Name %d: %s\n", i, patharr[i]);
     // Keep splitting the file or folder path
     while(patharr[++i] = strtok_r(NULL,"/", &rest)) {
-        printf("Name %d: %s\n", i, patharr[i]);
+        // printf("Name %d: %s\n", i, patharr[i]);
     }
     return i;
 }
 
 FileSystemOp_t* parseClientInput(char* input) {
-    printf("Parsing.\n");
     FileSystemOp_t* theOperation = (FileSystemOp_t*)malloc(sizeof(FileSystemOp_t));
     // Should be the operation to do like GET or INFO
     char* operation;
@@ -48,8 +47,12 @@ FileSystemOp_t* parseClientInput(char* input) {
     // Maximum # of names in the path
     int maxNumPathName = 10;
     char* patharr[maxNumPathName];
+
+    // Make a copy of the path to manipulate
+    char pathCopy[SIZE] = {0};
+    strncpy(pathCopy, theOperation->path, strlen(theOperation->path));
     
-    int pathSize = parseFilePath(theOperation->path, patharr);
+    int pathSize = parseFilePath(pathCopy, patharr);
 
     // Save the file path array and the total path size
     theOperation->pathArray = patharr;
@@ -78,10 +81,13 @@ int write_file(int sockDesc, char* filepath) {
     if (strcmp(buffer, "NOTFOUND") == 0) {
         printf("File not found on server!\n");
         return 1;
+    } else if (strncmp(buffer, "NOTFILE", strlen("NOTFILE")) == 0) {
+        printf("Path is not a file!\n");
+        return 1;
+    // Parse to an integer
     } else {
         fSize = atoi(buffer);
     }
-    // Parse to an integer
     
     printf("File Size: %d\n", fSize);
     // Clear out the buffer
