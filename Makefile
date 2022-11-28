@@ -14,4 +14,5 @@ cli: $(CLIENT)
 
 clean:
 	rm $(SERVER) $(CLIENT)
-	rm clientRoot/*
+	rm clientRoot/ -rf
+	rm server1Root/ -rf

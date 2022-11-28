@@ -1,6 +1,7 @@
 #define SIZE 2000
+// Path max is 10 names each with max of 256 characters
+#define MAXPATHLEN 2570
 #define CLIENTROOT "clientRoot/"
-#define TERMINATE "END##"
 
 typedef struct FileSystemOp {
     char* operation;
@@ -17,7 +18,7 @@ typedef struct FileSystemOp {
  * @param patharr The array holding the file path
  * @return int Number of tokens in the file path
  */
-int parseFilePath(char* fullPath, char* patharr[]);
+int parseFilePath(char* fullPath, char** patharr);
 
 /**
  * @brief Parse the client's input string into the operation and filepath
@@ -27,7 +28,7 @@ int parseFilePath(char* fullPath, char* patharr[]);
  * @param input 
  * @return FileSystemOp_t* object
  */
-FileSystemOp_t* parseClientInput(char* input);
+FileSystemOp_t* parseClientInput(char* input, char** patharr);
 
 /**
  * @brief Write the file from the socket descriptor as a stream

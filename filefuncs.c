@@ -8,9 +8,10 @@
 
 #include "filefuncs.h"
 
-int parseFilePath(char* fullPath, char* patharr[]) {
+int parseFilePath(char* fullPath, char** patharr) {
     int i = 0;
     char* rest = fullPath;
+
     // Get the first folder or file
     patharr[i] = strtok_r(rest, "/", &rest);
     // printf("Name %d: %s\n", i, patharr[i]);
@@ -21,14 +22,13 @@ int parseFilePath(char* fullPath, char* patharr[]) {
     return i;
 }
 
-FileSystemOp_t* parseClientInput(char* input) {
+FileSystemOp_t* parseClientInput(char* input, char** patharr) {
     FileSystemOp_t* theOperation = (FileSystemOp_t*)malloc(sizeof(FileSystemOp_t));
     // Should be the operation to do like GET or INFO
-    char* operation;
+    // Max length of operations is 4 but I allocate 10 to be sure
+    char* operation = (char*)malloc(10);
     char* rest = input;
-    operation = strtok_r(rest, " ", &rest);
-
-    // printf("Compare: %d\n", strcmp("GET", operation));
+    strcpy(operation, strtok_r(rest, " ", &rest));
 
     // If entered command is not one of the 5 commands, return NULL
     if (!strcmp("GET", operation)  == 0 &&
@@ -40,29 +40,26 @@ FileSystemOp_t* parseClientInput(char* input) {
     }
 
     theOperation->operation = operation;
-
-    char* path = strtok_r(rest, " ", &rest);
+    
+    char* path = (char*)malloc(MAXPATHLEN);
+    strcpy(path, strtok_r(rest, " ", &rest));
     theOperation->path = path;
 
-    // Maximum # of names in the path
-    int maxNumPathName = 10;
-    char* patharr[maxNumPathName];
-
     // Make a copy of the path to manipulate
-    char pathCopy[SIZE] = {0};
+    char* pathCopy = (char*)malloc(MAXPATHLEN);
     strncpy(pathCopy, theOperation->path, strlen(theOperation->path));
     
     int pathSize = parseFilePath(pathCopy, patharr);
-
-    // Save the file path array and the total path size
-    theOperation->pathArray = patharr;
-    theOperation->pathSize = pathSize;
-
+    
     // Check to see that the path size isn't too long
     if (theOperation->pathSize > 10) {
         printf("Path name is too long!\n");
         return NULL;
     }
+
+    // Save the file path array and the total path size
+    theOperation->pathArray = patharr;
+    theOperation->pathSize = pathSize;
 
     return theOperation;
 }
@@ -100,17 +97,17 @@ int write_file(int sockDesc, char* filepath) {
     if(fp == NULL) {
         return 1;
     }
+
     // Loop and write bytes to the file as big as file size
     totalBytes = fSize;
     while(totalBytes > 0) {
         n = recv(sockDesc, buffer, SIZE, 0);
-        if(n <= 0) { // || strncmp("END##", buffer, strlen("END##")) == 0) {
+        if(n <= 0) {
             break;
         }
         fprintf(fp, "%s", buffer);
         totalBytes -= strlen(buffer);
         bzero(buffer, SIZE);
-        // printf("Bytes left: %d\n", totalBytes);
     }
     fclose(fp);
     return 0;

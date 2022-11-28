@@ -3,39 +3,40 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/socket.h>
+#include <errno.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 #include <arpa/inet.h>
 
 #include "filefuncs.h"
 
 /**
- * @brief Get the File From Server object
- *
+ * @brief Get a file from the remote server
+ * GET operation
  * @param socket_desc The socket descriptor
  * @param fileName The file name to get
  * @return int 0 if successful, 1 if failed.
  */
-int getFileFromServer(int socket_desc, char* fileName) {
-    // Check if downloads folder exists
-    struct stat st = {0};
-    if (stat("clientRoot/downloads", &st) == -1) {
-        mkdir("clientRoot/downloads", 0777);
-    }
+int getFileFromServer(int socket_desc, char** patharr, int pathsize) {
+    // Make a downloads folder in the root if it doesn't already exist
+    mkdir("clientRoot/downloads", 0777);
 
     // Combine the root and the file name
     // Download all files into the downloads folder
-    char combined[SIZE] = {0};
+    char* combined = (char*)malloc(MAXPATHLEN);
     strcat(combined, CLIENTROOT);
     strcat(combined, "downloads/");
-    strcat(combined, fileName);
+    strcat(combined, patharr[pathsize - 1]);
 
     // Write the stream to the file path described in input
-    return write_file(socket_desc, combined);
+    int res = write_file(socket_desc, combined);
+    free(combined);
+    return res; 
 }
 
 /**
- * @brief Get the Info From Server object
- * 
+ * @brief Get information about a file or directory
+ * INFO operation
  * @param thePath
  * @param socket_desc 
  * @return int 0 if successful, 1 if failed
@@ -50,6 +51,94 @@ int getInfoFromServer(char* thePath, int socket_desc) {
     printf("\nInformation:\n\n%s", fileInfoBuffer);
     bzero(fileInfoBuffer, SIZE);
     return 0;
+}
+
+/**
+ * @brief Put a stream of bytes into the server. Create a file on the server.
+ * PUT Operation
+ * @param patharr The path array
+ * @param psize The path size
+ * @param socket_desc The socket
+ * @return int 0 if success, 1 for failure
+ */
+int putBytesToServer(char** patharr, int psize, int socket_desc) {
+    // Get the contents to write to the file on the server
+    char bytesToPut[SIZE] = {0};
+    printf("\nEnter file contents (MAX: 2000 characters):\n");
+    fgets(bytesToPut, SIZE, stdin);
+
+    // Send the contents to the server
+    if(send(socket_desc, bytesToPut, strlen(bytesToPut), 0) < 0){
+        printf("Unable to send request.\n");
+        return 1;
+    }
+    bzero(bytesToPut, SIZE);
+
+    return 0;
+}
+
+/**
+ * @brief Make directory or directories on the server
+ * MD Operation
+ * @param socket_desc The socket
+ * @return int 0 for success, 1 for failure
+ */
+int makeDirOnServer(int socket_desc) {
+    char mkdirStatus[SIZE] = {0};
+    int res = 0;
+    // Receive the server's response
+    if(recv(socket_desc, mkdirStatus, sizeof(mkdirStatus), 0) < 0){
+        printf("Error while receiving server's msg\n");
+        return 1;
+    }
+
+    if (strncmp("SUCCESS", mkdirStatus, strlen("SUCCESS")) == 0) {
+        printf("Successfully created the directory\n");
+        res = 0;
+    } else if (strncmp("INVALID", mkdirStatus, strlen("INVALID")) == 0) {
+        printf("Invalid folder structure!\n");
+        res = 1;
+    } else if (strncmp("EXISTS", mkdirStatus, strlen("EXISTS")) == 0) {
+        printf("Directory already exists!\n");
+        res = 1;
+    }
+
+    bzero(mkdirStatus, SIZE);
+    return res;
+}
+
+/**
+ * @brief Remove a directory or file on the server
+ * RM Operation
+ * @param socket_desc The socket descriptor 
+ * @return int 0 for success, 1 for failure
+ */
+int rmDirOnServer(int socket_desc) {
+    char rmdirStatus[SIZE] = {0};
+    int res = 0;
+
+    // Receive the server's response
+    if(recv(socket_desc, rmdirStatus, sizeof(rmdirStatus), 0) < 0){
+        printf("Error while receiving server's msg\n");
+        return 1;
+    }
+
+    if (strncmp("SUCCESS", rmdirStatus, strlen("SUCCESS")) == 0) {
+        printf("Successfully removed the directory or file!\n");
+        res = 0;
+    } else if (strncmp("NOTEMPTY", rmdirStatus, strlen("NOTEMPTY")) == 0) {
+        printf("Directory has to be empty to delete it!!\n");
+        res = 1;
+    } else if (strncmp("NOTFOUND", rmdirStatus, strlen("NOTFOUND")) == 0) {
+        printf("Directory or file doesn't exist!\n");
+        res = 1;
+    } else if (strncmp("BUSY", rmdirStatus, strlen("BUSY")) == 0) {
+        printf("Directory or file is in use!\n");
+        res = 1;
+    }
+    
+    bzero(rmdirStatus, SIZE);
+    return res;
 }
 
 /**
@@ -98,7 +187,7 @@ int main (void) {
         return 1;
     }
     
-    printf("Socket created successfully\n");
+    printf("Socket created successfully.\n");
     
     // Set port and IP the same as server-side:
     server_addr.sin_family = AF_INET;
@@ -110,43 +199,43 @@ int main (void) {
         printf("Unable to connect\n");
         return 1;
     }
-    printf("Connected with server successfully\n");
+    printf("Connected with server successfully.\n");
     
     // Get input from the user:
-    printf("Enter message: ");
+    printf("Enter Request: ");
     fgets(client_message, SIZE, stdin);
     // Clear the \n from the end of the client_message
     client_message[strcspn(client_message, "\n")] = 0;
     
     // Send the message to server:
     if(send(socket_desc, client_message, strlen(client_message), 0) < 0){
-        printf("Unable to send message\n");
+        printf("Unable to send request.\n");
         return 1;
     }
+
+    // 2D array for list of strings for the path
+    char** patharr = (char**)malloc(MAXPATHLEN);
+
     // Parse client input
-    FileSystemOp_t* theRequest = parseClientInput(client_message);
+    FileSystemOp_t* theRequest = parseClientInput(client_message, patharr);
     if (theRequest == NULL) {
         printf("Entered unsupported or not correctly formatted request!\n");
         cleanUp(theRequest, socket_desc);
         return 1;
     }
 
-    char fname[SIZE] = {0};
-    int arraySize = theRequest->pathSize - 1;
-    strncpy(fname, theRequest->pathArray[arraySize], strlen(theRequest->pathArray[arraySize]));
-
+    // Do the appropriate operation received from the client
     int res = -1;
     if (strncmp("GET", theRequest->operation, strlen("GET")) == 0) {
-        res = getFileFromServer(socket_desc, fname);
+        res = getFileFromServer(socket_desc, theRequest->pathArray, theRequest->pathSize);
     } else if (strncmp("INFO", theRequest->operation, strlen("INFO")) == 0) {
         res = getInfoFromServer(theRequest->path, socket_desc);
-    }
-
-    // Was write successful?
-    if (res == 0) {
-        printf("Successful request!\n");
-    } else if (res == 1) {
-        printf("Failed request!\n");
+    } else if (strncmp("PUT", theRequest->operation, strlen("PUT")) == 0) {
+        res = putBytesToServer(theRequest->pathArray, theRequest->pathSize, socket_desc);
+    } else if (strncmp("MD", theRequest->operation, strlen("MD")) == 0) {
+        res = makeDirOnServer(socket_desc);
+    } else if (strncmp("RM", theRequest->operation, strlen("MD")) == 0) {
+        res = rmDirOnServer(socket_desc);
     }
     
     // Receive the server's response
