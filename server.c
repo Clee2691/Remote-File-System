@@ -688,30 +688,12 @@ int delFileOrDir(const char* path, int client_sock) {
  * @param socket_desc The socket descriptor
  */
 void cleanUp(FileSystemOp_t* op, int client_sock, int socket_desc) {
-    // Free operation struct
-    free(op->operation);
-    free(op->path);
-    for (int i = 0; i < op->pathSize; i++) {
-        free(op->pathArray[i]);
-    }
-    free(op->pathArray);
-    free(op);
+    freeOperation(op);
     // Closing the socket
     printf("Closing connection.\n");
     close(client_sock);
     close(socket_desc);
 }
-
-void freeOperation(FileSystemOp_t* op) {
-    // Free operation struct
-    free(op->pathArray[0]);
-    free(op->pathArray);
-    free(op->operation);
-    free(op->path);
-    free(op);
-}
-
-
 
 /**
  * @brief The entrypoint to the program
@@ -719,6 +701,7 @@ void freeOperation(FileSystemOp_t* op) {
  * @return int 1 or 0
  */
 int main () {
+    int pid;
     int isFileStoreAvail = checkUSB();
     // No file storage so exit.
     if (isFileStoreAvail == 1) {
@@ -793,99 +776,110 @@ int main () {
             printf("Can't accept\n");
             return 1;
         }
+
         printf("Client connected at IP: %s and port: %i\n", 
                 inet_ntoa(client_addr.sin_addr), 
                 ntohs(client_addr.sin_port));
         
-        
-        //=============================
+        pid = fork();
 
-        //    Get client's action
+        if (pid == 0) {
+            // If it is a child, close the server socket
+            close(socket_desc);
+            //=============================
 
-        //=============================
+            //    Get client's action
 
-        // Get the initial client request
-        if (recv(client_sock, client_message, sizeof(client_message), 0) < 0){
-            printf("Couldn't receive client message\n");
-            return 1;
-        }
-        printf("Request from client: %s\n", client_message);
+            //=============================
+            while (1) {
+                // Get the initial client request
+                if (recv(client_sock, client_message, sizeof(client_message), 0) < 0){
+                    printf("Couldn't receive client message\n");
+                    return 1;
+                }
+                printf("Request from client: %s\n", client_message);
+                
+                if (strncmp(client_message, "exit", strlen("exit")) == 0) {
+                    break;
+                }
 
-        // 2D array for list of strings for the path
-        char** patharr = (char**)calloc(MAXPATHLEN, sizeof(char));
+                // 2D array for list of strings for the path
+                char** patharr = (char**)calloc(MAXPATHLEN, sizeof(char));
 
-        op = parseClientInput(client_message, patharr);
+                op = parseClientInput(client_message, patharr);
 
-        char* message;
+                char* message;
 
-        // Invalid parsed operation
-        if(op == NULL) {
-            printf("Invalid client input. Improperly formatted or path name too long!\n");
-            message = "Invalid client input. Improperly formatted or path name too long!\n";
+                // Invalid parsed operation
+                if(op == NULL) {
+                    printf("Invalid client input. Improperly formatted or path name too long!\n");
+                    message = "Invalid client input. Improperly formatted or path name too long!\n";
 
-            // Copy message into the buffer
-            strcpy(server_message, message);
+                    // Copy message into the buffer
+                    strcpy(server_message, message);
 
-            // Send the response buffer to the client
-            if (send(client_sock, server_message, strlen(server_message), 0) < 0){
-                printf("Can't send response to client!\n");
+                    // Send the response buffer to the client
+                    if (send(client_sock, server_message, strlen(server_message), 0) < 0){
+                        printf("Can't send response to client!\n");
+                    }
+                    memset(server_message, '\0', sizeof(server_message));
+                    memset(client_message, '\0', sizeof(client_message));
+                    // cleanUp(op, client_sock, socket_desc);
+                    continue;
+                }
+
+                //================================
+
+                // Dispatch appropriate function
+
+                //================================
+
+                int res = -1;
+
+                // Check the operation against supported operations
+                if (strncmp("GET", op->operation, strlen("GET")) == 0) {
+                    printf("GET Request\n");
+                    res = sendFile(op->path, client_sock);
+                } else if (strncmp("INFO", op->operation, strlen("INFO")) == 0) {
+                    printf("INFO Request\n");
+                    res = sendFileStat(op->path, client_sock);
+                } else if (strncmp("PUT", op->operation, strlen("PUT")) == 0) {
+                    printf("PUT Request\n");
+                    res = putBytesToFile(op->path, op->pathArray, op->pathSize, client_sock);
+                } else if (strncmp("MD", op->operation, strlen("MD")) == 0) {
+                    printf("MD Request\n");
+                    res = makeDirectories(op->pathArray, op->pathSize, client_sock);
+                } else if (strncmp("RM", op->operation, strlen("RM")) == 0) {
+                    printf("RM Request\n");
+                    res = delFileOrDir(op->path, client_sock);
+                } else {
+                    printf("Unsupported action!\n");
+                }
+
+                if (res == -1) {
+                    printf("Client didn't respond with supported action!\n");
+                    message = "Unknown request!\n";
+                } else if (res == 1) {
+                    printf("Error with %s request!\n", op->operation);
+                    message = "Error with request\n";
+                } else {
+                    printf("Successful %s request!\n", op->operation);
+                    message = "Successful request!";
+                }
+                
+                // Copy message into the buffer
+                strcpy(server_message, message);
+
+                // Send the response buffer to the client
+                if (send(client_sock, server_message, strlen(server_message), 0) < 0){
+                    printf("Can't send response to client!\n");
+                }
+                memset(server_message, '\0', sizeof(server_message));
+                memset(client_message, '\0', sizeof(client_message));
             }
-            memset(server_message, '\0', sizeof(server_message));
-            memset(client_message, '\0', sizeof(client_message));
-            // cleanUp(op, client_sock, socket_desc);
-            continue;
+            close(client_sock);
+            break;
         }
-
-        //================================
-
-        // Dispatch appropriate function
-
-        //================================
-
-        int res = -1;
-
-        // Check the operation against supported operations
-        if (strncmp("GET", op->operation, strlen("GET")) == 0) {
-            printf("GET Request\n");
-            res = sendFile(op->path, client_sock);
-        } else if (strncmp("INFO", op->operation, strlen("INFO")) == 0) {
-            printf("INFO Request\n");
-            res = sendFileStat(op->path, client_sock);
-        } else if (strncmp("PUT", op->operation, strlen("PUT")) == 0) {
-            printf("PUT Request\n");
-            res = putBytesToFile(op->path, op->pathArray, op->pathSize, client_sock);
-        } else if (strncmp("MD", op->operation, strlen("MD")) == 0) {
-            printf("MD Request\n");
-            res = makeDirectories(op->pathArray, op->pathSize, client_sock);
-        } else if (strncmp("RM", op->operation, strlen("RM")) == 0) {
-            printf("RM Request\n");
-            res = delFileOrDir(op->path, client_sock);
-        } else {
-            printf("Unsupported action!\n");
-        }
-
-        if (res == -1) {
-            printf("Client didn't respond with supported action!\n");
-            message = "Unknown request!\n";
-        } else if (res == 1) {
-            printf("Error with %s request!\n", op->operation);
-            message = "Error with request\n";
-        } else {
-            printf("Successful %s request!\n", op->operation);
-            message = "Successful request!";
-        }
-        
-        // Copy message into the buffer
-        strcpy(server_message, message);
-
-        // Send the response buffer to the client
-        if (send(client_sock, server_message, strlen(server_message), 0) < 0){
-            printf("Can't send response to client!\n");
-        }
-        memset(server_message, '\0', sizeof(server_message));
-        memset(client_message, '\0', sizeof(client_message));
-        freeOperation(op);
-        close(client_sock);
     }
 
     free(USB1PATH);

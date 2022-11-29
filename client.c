@@ -142,24 +142,6 @@ int rmDirOnServer(int socket_desc) {
 }
 
 /**
- * @brief Clean up sockets and malloced data
- * 
- * @param theRequest 
- * @param socket_desc 
- */
-void cleanUp(FileSystemOp_t* op, int socket_desc) {
-    // Free operation struct
-    free(op->operation);
-    free(op->path);
-    free(op->pathArray[0]);
-    free(op->pathArray);
-    free(op);
-    printf("Closing the socket.\n");
-    // Close the socket
-    close(socket_desc);
-}
-
-/**
  * @brief The entry point for the client
  * 
  * @return int 0 or 1
@@ -203,52 +185,58 @@ int main (void) {
         return 1;
     }
     printf("Connected with server successfully.\n");
-    
-    // Get input from the user:
-    printf("Enter Request: ");
-    fgets(client_message, SIZE, stdin);
-    // Clear the \n from the end of the client_message
-    client_message[strcspn(client_message, "\n")] = 0;
-    
-    // Send the message to server:
-    if(send(socket_desc, client_message, strlen(client_message), 0) < 0){
-        printf("Unable to send request.\n");
-        return 1;
+    FileSystemOp_t* theRequest;
+
+    while(1) {
+
+        // Get input from the user:
+        printf("Enter Request: ");
+        fgets(client_message, SIZE, stdin);
+        // Clear the \n from the end of the client_message
+        client_message[strcspn(client_message, "\n")] = 0;
+        
+        // Send the message to server:
+        if(send(socket_desc, client_message, strlen(client_message), 0) < 0){
+            printf("Unable to send request.\n");
+            return 1;
+        }
+
+        if (strncmp(client_message, "exit", strlen("exit")) == 0) {
+            break;
+        }
+
+        // 2D array for list of strings for the path
+        char** patharr = (char**)calloc(MAXPATHLEN, sizeof(char));
+
+        // Parse client input
+        theRequest = parseClientInput(client_message, patharr);
+        if (theRequest == NULL) {
+            printf("Entered unsupported or not correctly formatted request!\n");
+        }
+
+        // Do the appropriate operation received from the client
+        if (strncmp("GET", theRequest->operation, strlen("GET")) == 0) {
+            getFileFromServer(socket_desc, theRequest->pathArray, theRequest->pathSize);
+        } else if (strncmp("INFO", theRequest->operation, strlen("INFO")) == 0) {
+            getInfoFromServer(theRequest->path, socket_desc);
+        } else if (strncmp("PUT", theRequest->operation, strlen("PUT")) == 0) {
+            putBytesToServer(theRequest->pathArray, theRequest->pathSize, socket_desc);
+        } else if (strncmp("MD", theRequest->operation, strlen("MD")) == 0) {
+            makeDirOnServer(socket_desc);
+        } else if (strncmp("RM", theRequest->operation, strlen("MD")) == 0) {
+            rmDirOnServer(socket_desc);
+        }
+        
+        // Receive the server's response
+        if(recv(socket_desc, server_message, sizeof(server_message), 0) < 0){
+            printf("Error while receiving server's msg\n");
+            return 1;
+        }
+        
+        printf("Server's response: %s\n",server_message);
+        freeOperation(theRequest);
     }
 
-    // 2D array for list of strings for the path
-    char** patharr = (char**)calloc(MAXPATHLEN, sizeof(char));
-
-    // Parse client input
-    FileSystemOp_t* theRequest = parseClientInput(client_message, patharr);
-    if (theRequest == NULL) {
-        printf("Entered unsupported or not correctly formatted request!\n");
-        cleanUp(theRequest, socket_desc);
-        return 1;
-    }
-
-    // Do the appropriate operation received from the client
-    int res = -1;
-    if (strncmp("GET", theRequest->operation, strlen("GET")) == 0) {
-        res = getFileFromServer(socket_desc, theRequest->pathArray, theRequest->pathSize);
-    } else if (strncmp("INFO", theRequest->operation, strlen("INFO")) == 0) {
-        res = getInfoFromServer(theRequest->path, socket_desc);
-    } else if (strncmp("PUT", theRequest->operation, strlen("PUT")) == 0) {
-        res = putBytesToServer(theRequest->pathArray, theRequest->pathSize, socket_desc);
-    } else if (strncmp("MD", theRequest->operation, strlen("MD")) == 0) {
-        res = makeDirOnServer(socket_desc);
-    } else if (strncmp("RM", theRequest->operation, strlen("MD")) == 0) {
-        res = rmDirOnServer(socket_desc);
-    }
-    
-    // Receive the server's response
-    if(recv(socket_desc, server_message, sizeof(server_message), 0) < 0){
-        printf("Error while receiving server's msg\n");
-        return 1;
-    }
-    
-    printf("Server's response: %s\n",server_message);
-
-    cleanUp(theRequest, socket_desc);
+    close(socket_desc);
     return 0;
 }

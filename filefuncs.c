@@ -8,6 +8,15 @@
 
 #include "filefuncs.h"
 
+void freeOperation(FileSystemOp_t* op) {
+    // Free operation struct
+    free(op->pathArray[0]);
+    free(op->pathArray);
+    free(op->operation);
+    free(op->path);
+    free(op);
+}
+
 int parseFilePath(char* fullPath, char** patharr) {
     int i = 0;
     char* rest = fullPath;

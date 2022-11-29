@@ -12,6 +12,13 @@ typedef struct FileSystemOp {
 } FileSystemOp_t;
 
 /**
+ * @brief Free the operation struct
+ * 
+ * @param op The operation
+ */
+void freeOperation(FileSystemOp_t* op);
+
+/**
  * @brief Parse the file path of the request
  * 
  * @param fullPath The full file path
