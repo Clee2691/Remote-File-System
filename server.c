@@ -127,6 +127,7 @@ int sendFileStat(char* filePath, int socketFD) {
         fileStat = getFileStats(combined2);
     }
 
+    // File not found
     if (fileStat.st_size == -1) {
         printf("File not found on server!\n");
 
@@ -309,6 +310,8 @@ int sendFile(char* filePath, int socketFD) {
         // Clear out the data buffer after each loop
         memset(data, '\0', sizeof(data));
     }
+
+    // Free the malloced memory
     free(combined1);
     free(combined2);
     return 0;
@@ -396,7 +399,6 @@ int putBytesToFile(char* pathName, char** pathArr, int pathSize, int socketFD) {
     checkUSB();
     // Last item in array needs to be a valid file name with an extension
     char* fName = pathArr[pathSize - 1];
-    printf("File name: %s\n", fName);
 
     // Check valid filename
     if (strchr(fName, '.') == NULL) {
@@ -781,6 +783,7 @@ int main () {
                 inet_ntoa(client_addr.sin_addr), 
                 ntohs(client_addr.sin_port));
         
+        // Multiprocess support for multiple client requests
         pid = fork();
 
         if (pid == 0) {
@@ -791,14 +794,14 @@ int main () {
             //    Get client's action
 
             //=============================
-            while (1) {
+            while (1) { // Infinite server loop
                 // Get the initial client request
                 if (recv(client_sock, client_message, sizeof(client_message), 0) < 0){
                     printf("Couldn't receive client message\n");
                     return 1;
                 }
                 printf("Request from client: %s\n", client_message);
-                
+
                 if (strncmp(client_message, "exit", strlen("exit")) == 0) {
                     break;
                 }

@@ -92,6 +92,7 @@ int makeDirOnServer(int socket_desc) {
         return 1;
     }
 
+    // Check status and return result
     if (strncmp("SUCCESS", mkdirStatus, strlen("SUCCESS")) == 0) {
         printf("Successfully created the directory\n");
         res = 0;
@@ -123,6 +124,7 @@ int rmDirOnServer(int socket_desc) {
         return 1;
     }
 
+    // Check status and return
     if (strncmp("SUCCESS", rmdirStatus, strlen("SUCCESS")) == 0) {
         printf("Successfully removed the directory or file!\n");
         res = 0;
@@ -146,7 +148,7 @@ int rmDirOnServer(int socket_desc) {
  * 
  * @return int 0 or 1
  */
-int main (void) {
+int main () {
     // Create a root directory for the client on initial launch if not there
     struct stat st = {0};
     if (stat("clientRoot", &st) == -1) {
@@ -201,6 +203,7 @@ int main (void) {
             return 1;
         }
 
+        // Exit the loop if user enters exit
         if (strncmp(client_message, "exit", strlen("exit")) == 0) {
             break;
         }
@@ -234,6 +237,7 @@ int main (void) {
         }
         
         printf("Server's response: %s\n",server_message);
+        // Clean up the current operation
         freeOperation(theRequest);
     }
 
