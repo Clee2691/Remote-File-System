@@ -13,6 +13,12 @@
 
 #include "filefuncs.h"
 
+char* USB1PATH;
+char* USB2PATH;
+
+int USB1AVAIL = 0;
+int USB2AVAIL = 0;
+
 /**
  * @brief Get the file or directory statistics
  * 
@@ -43,13 +49,60 @@ struct stat getFileStats(char* fileName) {
  */
 int sendFileStat(char* filePath, int socketFD) {
     char infoBuffer[SIZE] = {0};
-    char serverRoot[] = "server1Root/";
-    char* combined = (char*)malloc(SIZE);
-    strcat(combined, serverRoot);
-    strncat(combined, filePath, strlen(filePath));
+    char* combined1 = (char*)malloc(SIZE);
+    char* combined2 = (char*)malloc(SIZE);
+    struct stat fileStat;
+
+     // Both are available
+    if (USB1AVAIL == 1 && USB2AVAIL == 1) {
+        // USB 1
+        strcat(combined1, USB1PATH);
+        strncat(combined1, filePath, strlen(filePath));
+        fileStat = getFileStats(combined1);
+
+        // If USB 1 doesn't have it, try USB 2
+        if (fileStat.st_size == -1) {
+            strcat(combined2, USB2PATH);
+            strncat(combined2, filePath, strlen(filePath));
+            fileStat = getFileStats(combined2);
+        }
+
+    // USB 1 is available but # 2 is not
+    } else if (USB1AVAIL == 1 && USB2AVAIL == 0) {
+        // USB 1
+        strcat(combined1, USB1PATH);
+        strncat(combined1, filePath, strlen(filePath));
+        fileStat = getFileStats(combined1);
+
+    // USB 2 is available but #1 is not
+    } else if (USB1AVAIL == 0 && USB2AVAIL == 1) {
+        // USB 2
+        strcat(combined2, USB2PATH);
+        strncat(combined2, filePath, strlen(filePath));
+        fileStat = getFileStats(combined2);
+    }
+
+    // strcat(combined, USB1PATH);
+    // strncat(combined, filePath, strlen(filePath));
 
     // Get the file stats
-    struct stat fileStat = getFileStats(combined);
+    // struct stat fileStat = getFileStats(combined);
+
+    if (fileStat.st_size == -1) {
+        printf("File not found on server!\n");
+
+        strcat(infoBuffer, "File not found!");
+
+        // Send info to the client
+        if (send(socketFD, infoBuffer, sizeof(infoBuffer), 0) == -1) {
+            printf("Failed sending info to client.\n");
+            return 1;
+        }
+        
+        // Clear out the data buffer
+        bzero(infoBuffer, SIZE);
+        return 1;
+    }
 
     // Is it a directory or a file?
     if (S_ISDIR(fileStat.st_mode)) {
@@ -105,6 +158,7 @@ int sendFileStat(char* filePath, int socketFD) {
 
     // Send info to the client
     if (send(socketFD, infoBuffer, sizeof(infoBuffer), 0) == -1) {
+        printf("Failed sending info to client.\n");
         return 1;
     }
 
@@ -127,9 +181,9 @@ int sendFile(char* filePath, int socketFD) {
     char data[SIZE] = {0};
 
     // Combine the root to the filepath
-    char* serverRoot = "server1Root/";
+    // char* serverRoot = "server1Root/";
     char* combined = (char*)malloc(MAXPATHLEN);
-    strcat(combined, serverRoot);
+    strcat(combined, USB1PATH);
     strncat(combined, filePath, strlen(filePath));
 
         // Get the file statistics
@@ -208,7 +262,7 @@ void mkDirPath(const char* dirPath) {
  * @param clientSocket The connected client socket
  * @return int 0 for success, 1 for failure
  */
-int writeToFile(FILE* fp, int clientSocket) {
+int writeToFile(FILE* fp1, FILE* fp2, int clientSocket) {
     // Create buffer to receive client input
     char byteBuffer[SIZE] = {0};
     // Get the client's input
@@ -217,10 +271,27 @@ int writeToFile(FILE* fp, int clientSocket) {
         return 1;
     }
 
-    // Write to the file
-    fprintf(fp, "%s", byteBuffer);
+    // Write to both file pointers if available
+    if (fp1 != NULL) {
+        fprintf(fp1, "%s", byteBuffer);
+    }
 
+    if (fp2 != NULL) {
+        fprintf(fp2, "%s", byteBuffer);
+    }
+    
     return 0;
+}
+
+void makePathWithArr(char* finalPath, char** pathArr, int pathSize, char* usb, int offset) {
+    strcat(finalPath, usb);
+    for (int i = 0; i < pathSize - (offset - 1); i++) {
+        strcat(finalPath, pathArr[i]);
+        if (i == pathSize - offset) {
+            continue;
+        }
+        strcat(finalPath, "/");
+    }
 }
 
 /**
@@ -244,33 +315,91 @@ int putBytesToFile(char* pathName, char** pathArr, int pathSize, int socketFD) {
         return 1;
     }
 
+    int res;
+
     // Make the directory path
-    char* dirPath = (char*)calloc(MAXPATHLEN, sizeof(char));
-    strcat(dirPath, "server1Root/");
-    for (int i = 0; i < pathSize - 1; i++) {
-        strcat(dirPath, pathArr[i]);
-        if (i == pathSize - 2) {
-            continue;
+    char* dirPath1 = (char*)malloc(MAXPATHLEN);
+    char* dirPath2 = (char*)malloc(MAXPATHLEN);
+
+    // The path to the file
+    char* fullPath1 = (char*)malloc(MAXPATHLEN);
+    char* fullPath2 = (char*)malloc(MAXPATHLEN);
+
+    // The file pointer
+    FILE* fp1;
+    FILE* fp2;
+
+    // Both are available
+    if (USB1AVAIL == 1 && USB2AVAIL == 1) {
+        makePathWithArr(dirPath1, pathArr, pathSize, USB1PATH, 2);
+        makePathWithArr(dirPath2, pathArr, pathSize, USB2PATH, 2);
+
+        // Make directory path first
+        mkDirPath(dirPath1);
+        mkDirPath(dirPath2);
+
+        // Make the file path1
+        strcat(fullPath1, USB1PATH);
+        strcat(fullPath1, pathName);
+
+        // Make the file path2
+        strcat(fullPath2, USB2PATH);
+        strcat(fullPath2, pathName);
+
+        // Open file pointers
+        fp1 = fopen(fullPath1, "w");
+        fp2 = fopen(fullPath2, "w");
+
+        if (fp1 == NULL && fp2 == NULL) {
+            printf("Error opening file for writing.\n");
+            return 1;
         }
-        strcat(dirPath, "/");
+
+        res = writeToFile(fp1, fp2, socketFD);
+
+    // USB 1 is available but # 2 is not
+    } else if (USB1AVAIL == 1 && USB2AVAIL == 0) {
+        makePathWithArr(dirPath1, pathArr, pathSize, USB1PATH, 2);
+        mkDirPath(dirPath1);
+
+        strcat(fullPath1, USB1PATH);
+        strcat(fullPath1, pathName);
+
+        fp1 = fopen(fullPath1, "w");
+
+        if (fp1 == NULL) {
+            printf("Error opening file for writing.\n");
+            return 1;
+        }
+
+        res = writeToFile(fp1, NULL, socketFD);
+
+    // USB 2 is available but #1 is not
+    } else if (USB1AVAIL == 0 && USB2AVAIL == 1) {
+        makePathWithArr(dirPath2, pathArr, pathSize, USB2PATH, 2);
+        mkDirPath(dirPath2);
+
+        strcat(fullPath2, USB2PATH);
+        strcat(fullPath2, pathName);
+
+        fp2 = fopen(fullPath2, "w");
+
+        if (fp2 == NULL) {
+            printf("Error opening file for writing.\n");
+            return 1;
+        }
+
+        res = writeToFile(NULL, fp2, socketFD);
     }
-
-    mkDirPath(dirPath);
-    char* fullPath = (char*)malloc(MAXPATHLEN);
-    strcat(fullPath, "server1Root/");
-    strcat(fullPath, pathName);
-
-    FILE* fp = fopen(fullPath, "w");
-    if (fp == NULL) {
-        printf("Error opening file for writing.\n");
-        return 1;
-    }
-
-    // Write the bytes to the new file.
-    int res = writeToFile(fp, socketFD);
 
     // Close the opened file
-    fclose(fp);
+    if (fp1 != NULL) {
+        fclose(fp1);
+    }
+
+    if (fp2 != NULL) {
+        fclose(fp2);
+    }
 
     return res;
 }
@@ -286,7 +415,7 @@ int putBytesToFile(char* pathName, char** pathArr, int pathSize, int socketFD) {
 int makeDirectories(char** pathArr, int pathSize, int client_sock) {
     char status[SIZE] = {0};
 
-    // Check valid filename
+    // Check valid directory name
     if (strchr(pathArr[pathSize - 1], '.') != NULL) {
         printf("Cannot have '.' in directory name!\n");
 
@@ -297,35 +426,68 @@ int makeDirectories(char** pathArr, int pathSize, int client_sock) {
         }
         return 1;
     }
-
-    // Make the directory path
-    char* dirPath = (char*)calloc(MAXPATHLEN, sizeof(char));
-    strcat(dirPath, "server1Root/");
-    for (int i = 0; i < pathSize; i++) {
-        strcat(dirPath, pathArr[i]);
-        if (i == pathSize - 1) {
-            continue;
-        }
-        strcat(dirPath, "/");
-    }
-
+    
     struct stat dstat;
+    // Make the directory path
+    char* dirPath1 = (char*)malloc(MAXPATHLEN);
+    char* dirPath2 = (char*)malloc(MAXPATHLEN);
 
-    // Check if directory exists
-    if (stat(dirPath, &dstat) == 0 && S_ISDIR(dstat.st_mode)) {
-        printf("Directory already exists!\n");
+    // Both are available
+    if (USB1AVAIL == 1 && USB2AVAIL == 1) {
+        makePathWithArr(dirPath1, pathArr, pathSize, USB1PATH, 1);
+        makePathWithArr(dirPath2, pathArr, pathSize, USB2PATH, 1);
 
-        // Send to client that the directory already exists
-        strcpy(status, "EXISTS");
-        if (send(client_sock, status, strlen(status), 0) < 0){
-            printf("Can't send response to client!\n");
+        // Check if directory exists
+        if (stat(dirPath1, &dstat) == 0 && S_ISDIR(dstat.st_mode)) {
+            printf("Directory already exists!\n");
+
+            // Send to client that the directory already exists
+            strcpy(status, "EXISTS");
+            if (send(client_sock, status, strlen(status), 0) < 0){
+                printf("Can't send response to client!\n");
+            }
+
+            return 1;
+        }
+        mkDirPath(dirPath1);
+        mkDirPath(dirPath2);
+
+    // USB 1 is available but # 2 is not
+    } else if (USB1AVAIL == 1 && USB2AVAIL == 0) {
+        makePathWithArr(dirPath1, pathArr, pathSize, USB1PATH, 1);
+
+        // Check if directory exists
+        if (stat(dirPath1, &dstat) == 0 && S_ISDIR(dstat.st_mode)) {
+            printf("Directory already exists!\n");
+
+            // Send to client that the directory already exists
+            strcpy(status, "EXISTS");
+            if (send(client_sock, status, strlen(status), 0) < 0){
+                printf("Can't send response to client!\n");
+            }
+
+            return 1;
+        }
+        mkDirPath(dirPath1);
+
+    // USB 2 is available but #1 is not
+    } else if (USB1AVAIL == 0 && USB2AVAIL == 1) {
+        makePathWithArr(dirPath2, pathArr, pathSize, USB2PATH, 1);
+        // Check if directory exists
+        if (stat(dirPath2, &dstat) == 0 && S_ISDIR(dstat.st_mode)) {
+            printf("Directory already exists!\n");
+
+            // Send to client that the directory already exists
+            strcpy(status, "EXISTS");
+            if (send(client_sock, status, strlen(status), 0) < 0){
+                printf("Can't send response to client!\n");
+            }
+
+            return 1;
         }
 
-        return 1;
+        mkDirPath(dirPath2);
     }
-
-    // Make the directories
-    mkDirPath(dirPath);
 
     // Send success status to the client
     strcpy(status, "SUCCESS");
@@ -343,15 +505,41 @@ int makeDirectories(char** pathArr, int pathSize, int client_sock) {
  * @return int 0 for success, 1 for failure
  */
 int delFileOrDir(const char* path, int client_sock) {
-    char* finalPath = (char*)malloc(MAXPATHLEN);
+    char* finalPath1 = (char*)malloc(MAXPATHLEN);
+    char* finalPath2 = (char*)malloc(MAXPATHLEN);
 
-    strcat(finalPath, "server1Root/");
-    strcat(finalPath, path);
+    int res;
 
     char status[SIZE] = {0};
 
-    // Remove the file or directory
-    int res = remove(finalPath);
+    // Both are available
+    if (USB1AVAIL == 1 && USB2AVAIL == 1) {
+        // USB 1
+        strcat(finalPath1, USB1PATH);
+        strcat(finalPath1, path);
+        // USB 2
+        strcat(finalPath2, USB2PATH);
+        strcat(finalPath2, path);
+
+        res = remove(finalPath1);
+        res = remove(finalPath2);
+
+    // USB 1 is available but # 2 is not
+    } else if (USB1AVAIL == 1 && USB2AVAIL == 0) {
+        // USB 1
+        strcat(finalPath1, USB1PATH);
+        strcat(finalPath1, path);
+        
+        res = remove(finalPath1);
+
+    // USB 2 is available but #1 is not
+    } else if (USB1AVAIL == 0 && USB2AVAIL == 1) {
+        // USB 2
+        strcat(finalPath2, USB2PATH);
+        strcat(finalPath2, path);
+        
+        res = remove(finalPath2);
+    }
 
     // Return the appropriate response to the attempted deletion
     if (res != 0 && errno == ENOTEMPTY) {
@@ -383,6 +571,9 @@ int delFileOrDir(const char* path, int client_sock) {
         printf("Can't send response to client!\n");
     }
 
+    free(finalPath1);
+    free(finalPath2);
+
     return 0;
 }
 
@@ -394,7 +585,7 @@ int delFileOrDir(const char* path, int client_sock) {
  * @param socket_desc The socket descriptor
  */
 void cleanUp(FileSystemOp_t* op, int client_sock, int socket_desc) {
-        // Free operation struct
+    // Free operation struct
     free(op);
     // Closing the socket
     printf("Closing connection.\n");
@@ -403,14 +594,64 @@ void cleanUp(FileSystemOp_t* op, int client_sock, int socket_desc) {
 }
 
 /**
+ * @brief Check USB 1 and USB 2 drives.
+ * Set the global variables if drives exist.
+ * 
+ * @return int 0 if at least 1 usb drive is present, otherwise 1 if nothing
+ * is available
+ */
+int checkUSB() {
+    // The USB drives mounted
+    char* usb1 = "/mnt/d/";
+    char* usb2 = "/mnt/e/";
+
+    USB1PATH = (char*)malloc(strlen(usb1) + sizeof(char));
+    USB2PATH = (char*)malloc(strlen(usb2) + sizeof(char));
+
+    struct stat sb;
+    // USB Drive #1
+    if (stat(usb1, &sb) == 0 && S_ISDIR(sb.st_mode)) {
+        printf("USB 1 is available!\n");
+        strncpy(USB1PATH, usb1, strlen(usb1));
+        printf("%s\n", USB1PATH);
+        USB1AVAIL = 1;
+    } else {
+        printf("USB 1 not available!\n");
+        USB1AVAIL = 0;
+    }
+
+    // USB Drive #2
+    if (stat(usb2, &sb) == 0 && S_ISDIR(sb.st_mode)) {
+        printf("USB 2 is available!\n");
+        strncpy(USB2PATH, usb2, strlen(usb2));
+        USB2AVAIL = 1;
+    } else {
+        printf("USB 2 not available!\n");
+        USB2AVAIL = 0;
+    }
+
+    // No USB drives available for storage
+    if (USB1AVAIL == 0 && USB2AVAIL == 0) {
+        return 1;
+    }
+    // At least one drive is available
+    return 0;
+}
+
+/**
  * @brief The entrypoint to the program
  * 
  * @return int 1 or 0
  */
-int main (void) {
-
-    // Create a root directory for the server on initial launch if not there
-    mkdir("server1Root", 0777);
+int main () {
+    int isFileStoreAvail = checkUSB();
+    // No file storage so exit.
+    if (isFileStoreAvail == 1) {
+        printf("No file storage available. Server failed to start. Exiting.\n");
+        return 1;
+    } else {
+        printf("At least 1 file storage device is available. Starting server...\n");
+    }
 
     int socket_desc;
     int client_sock;
@@ -474,7 +715,9 @@ int main (void) {
         printf("Can't accept\n");
         return 1;
     }
-    printf("Client connected at IP: %s and port: %i\n", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
+    printf("Client connected at IP: %s and port: %i\n", 
+            inet_ntoa(client_addr.sin_addr), 
+            ntohs(client_addr.sin_port));
     
     
     //=============================
@@ -483,6 +726,7 @@ int main (void) {
 
     //=============================
 
+    // Get the initial client request
     if (recv(client_sock, client_message, sizeof(client_message), 0) < 0){
         printf("Couldn't receive client message\n");
         return 1;

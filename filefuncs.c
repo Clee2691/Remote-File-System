@@ -14,10 +14,8 @@ int parseFilePath(char* fullPath, char** patharr) {
 
     // Get the first folder or file
     patharr[i] = strtok_r(rest, "/", &rest);
-    // printf("Name %d: %s\n", i, patharr[i]);
     // Keep splitting the file or folder path
     while(patharr[++i] = strtok_r(NULL,"/", &rest)) {
-        // printf("Name %d: %s\n", i, patharr[i]);
     }
     return i;
 }
