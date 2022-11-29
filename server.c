@@ -1,7 +1,6 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <libgen.h>
 #include <unistd.h>
 #include <time.h>
 #include <sys/socket.h>
@@ -20,6 +19,51 @@ int USB1AVAIL = 0;
 int USB2AVAIL = 0;
 
 /**
+ * @brief Check USB 1 and USB 2 drives.
+ * Set the global variables if drives exist.
+ * 
+ * @return int 0 if at least 1 usb drive is present, otherwise 1 if nothing
+ * is available
+ */
+int checkUSB() {
+    // The USB drives mounted
+    char* usb1 = "/mnt/d/";
+    char* usb2 = "/mnt/e/";
+
+    USB1PATH = (char*)malloc(strlen(usb1) + sizeof(char));
+    USB2PATH = (char*)malloc(strlen(usb2) + sizeof(char));
+
+    struct stat sb;
+    // USB Drive #1
+    if (stat(usb1, &sb) == 0 && S_ISDIR(sb.st_mode)) {
+        printf("USB 1 is available!\n");
+        strncpy(USB1PATH, usb1, strlen(usb1));
+        printf("%s\n", USB1PATH);
+        USB1AVAIL = 1;
+    } else {
+        printf("USB 1 not available!\n");
+        USB1AVAIL = 0;
+    }
+
+    // USB Drive #2
+    if (stat(usb2, &sb) == 0 && S_ISDIR(sb.st_mode)) {
+        printf("USB 2 is available!\n");
+        strncpy(USB2PATH, usb2, strlen(usb2));
+        USB2AVAIL = 1;
+    } else {
+        printf("USB 2 not available!\n");
+        USB2AVAIL = 0;
+    }
+
+    // No USB drives available for storage
+    if (USB1AVAIL == 0 && USB2AVAIL == 0) {
+        return 1;
+    }
+    // At least one drive is available
+    return 0;
+}
+
+/**
  * @brief Get the file or directory statistics
  * 
  * @param fileName The path to the file
@@ -30,9 +74,10 @@ struct stat getFileStats(char* fileName) {
     int fileDesc;
 
     fileDesc = open(fileName, O_RDONLY);
-
+    // Check if file is existent
     if (fstat(fileDesc, &fileStat) < 0)
-    {
+    {   
+        // Set the file size to -1 if not found and return the stat
         printf("Failed getting stats for file: %s.\n", fileName);
         fileStat.st_size = -1;
     }
@@ -48,6 +93,7 @@ struct stat getFileStats(char* fileName) {
  * @return int 0 if successful, 1 if not
  */
 int sendFileStat(char* filePath, int socketFD) {
+    checkUSB();
     char infoBuffer[SIZE] = {0};
     char* combined1 = (char*)malloc(SIZE);
     char* combined2 = (char*)malloc(SIZE);
@@ -82,23 +128,17 @@ int sendFileStat(char* filePath, int socketFD) {
         fileStat = getFileStats(combined2);
     }
 
-    // strcat(combined, USB1PATH);
-    // strncat(combined, filePath, strlen(filePath));
-
-    // Get the file stats
-    // struct stat fileStat = getFileStats(combined);
-
     if (fileStat.st_size == -1) {
         printf("File not found on server!\n");
 
-        strcat(infoBuffer, "File not found!");
+        strcat(infoBuffer, "File not found!\n");
 
         // Send info to the client
         if (send(socketFD, infoBuffer, sizeof(infoBuffer), 0) == -1) {
             printf("Failed sending info to client.\n");
             return 1;
         }
-        
+
         // Clear out the data buffer
         bzero(infoBuffer, SIZE);
         return 1;
@@ -164,6 +204,8 @@ int sendFileStat(char* filePath, int socketFD) {
 
     // Clear out the data buffer
     bzero(infoBuffer, SIZE);
+    free(combined1);
+    free(combined2);
     return 0;
 }
 
@@ -175,25 +217,53 @@ int sendFileStat(char* filePath, int socketFD) {
  * @return int 0 if successful 1 if failed 
  */
 int sendFile(char* filePath, int socketFD) {
+    checkUSB();
     // The file pointer
     FILE* fp;
     // The data buffer initialized to 0s
     char data[SIZE] = {0};
 
     // Combine the root to the filepath
-    // char* serverRoot = "server1Root/";
-    char* combined = (char*)malloc(MAXPATHLEN);
-    strcat(combined, USB1PATH);
-    strncat(combined, filePath, strlen(filePath));
+    char* combined1 = (char*)malloc(MAXPATHLEN);
+    char* combined2 = (char*)malloc(MAXPATHLEN);
 
-        // Get the file statistics
-    struct stat fileStats = getFileStats(combined);
+    struct stat fileStat;
 
-    // Only need the file size to send the correct aomunt of bytes
-    int fileSize = fileStats.st_size;
+     // Both are available
+    if (USB1AVAIL == 1 && USB2AVAIL == 1) {
+        // USB 1
+        strcat(combined1, USB1PATH);
+        strncat(combined1, filePath, strlen(filePath));
+        fileStat = getFileStats(combined1);
+
+        // If USB 1 doesn't have it, try USB 2
+        if (fileStat.st_size == -1) {
+            strcat(combined2, USB2PATH);
+            strncat(combined2, filePath, strlen(filePath));
+            fileStat = getFileStats(combined2);
+            combined1 = NULL;
+        }
+        combined2 = NULL;
+
+    // USB 1 is available but # 2 is not
+    } else if (USB1AVAIL == 1 && USB2AVAIL == 0) {
+        // USB 1
+        strcat(combined1, USB1PATH);
+        strncat(combined1, filePath, strlen(filePath));
+        fileStat = getFileStats(combined1);
+        combined2 = NULL;
+
+    // USB 2 is available but #1 is not
+    } else if (USB1AVAIL == 0 && USB2AVAIL == 1) {
+        // USB 2
+        strcat(combined2, USB2PATH);
+        strncat(combined2, filePath, strlen(filePath));
+        fileStat = getFileStats(combined2);
+        combined1 = NULL;
+    }
 
     // Error getting file stats
-    if (fileSize == -1) {
+    if (fileStat.st_size == -1) {
         printf("Could not get file data! Probably doesn't exist.\n");
         char* message = "NOTFOUND";
         strcpy(data, message);
@@ -203,7 +273,7 @@ int sendFile(char* filePath, int socketFD) {
     }
 
     // If it is not a file, nothing to send
-    if (!S_ISREG(fileStats.st_mode)) {
+    if (!S_ISREG(fileStat.st_mode)) {
         printf("Not a file!\n");
         char* message = "NOTFILE";
         strcpy(data, message);
@@ -213,15 +283,20 @@ int sendFile(char* filePath, int socketFD) {
     }
 
     // Try to open the file
-    fp = fopen(combined, "r");
+    if (combined1 != NULL) {
+        fp = fopen(combined1, "r");
+    } else if (combined2 != NULL) {
+        fp = fopen(combined2, "r");
+    }
+    
     // No file found
     if (fp == NULL) {
-        printf("Error, file at path '%s' not found!\n", combined);
+        printf("Error, file not found!\n");
         return 1;
     }
 
     // Send the file size in bytes
-    sprintf(data, "%d", fileSize);
+    sprintf(data, "%ld", fileStat.st_size);
     send(socketFD, data, sizeof(data), 0);
     bzero(data, SIZE);
 
@@ -235,7 +310,8 @@ int sendFile(char* filePath, int socketFD) {
         // Clear out the data buffer after each loop
         bzero(data, SIZE);
     }
-    free(combined);
+    free(combined1);
+    free(combined2);
     return 0;
 }
 
@@ -283,8 +359,20 @@ int writeToFile(FILE* fp1, FILE* fp2, int clientSocket) {
     return 0;
 }
 
+/**
+ * @brief Make the full file path with the path array and an offset
+ * along with the USB location
+ * 
+ * @param finalPath The final path pointer
+ * @param pathArr The operation's path array
+ * @param pathSize The path array's size
+ * @param usb The USB path
+ * @param offset The offset
+ */
 void makePathWithArr(char* finalPath, char** pathArr, int pathSize, char* usb, int offset) {
+    // The USB path either 1 or 2
     strcat(finalPath, usb);
+    // Concat the array with the usb path
     for (int i = 0; i < pathSize - (offset - 1); i++) {
         strcat(finalPath, pathArr[i]);
         if (i == pathSize - offset) {
@@ -305,6 +393,7 @@ void makePathWithArr(char* finalPath, char** pathArr, int pathSize, char* usb, i
  * @return int 0 for success, 1 for failure
  */
 int putBytesToFile(char* pathName, char** pathArr, int pathSize, int socketFD) {
+    checkUSB();
     // Last item in array needs to be a valid file name with an extension
     char* fName = pathArr[pathSize - 1];
     printf("File name: %s\n", fName);
@@ -396,10 +485,14 @@ int putBytesToFile(char* pathName, char** pathArr, int pathSize, int socketFD) {
     if (fp1 != NULL) {
         fclose(fp1);
     }
-
     if (fp2 != NULL) {
         fclose(fp2);
     }
+
+    free(dirPath1);
+    free(dirPath2);
+    free(fullPath1);
+    free(fullPath2);
 
     return res;
 }
@@ -413,6 +506,7 @@ int putBytesToFile(char* pathName, char** pathArr, int pathSize, int socketFD) {
  * @return int 0 for success, 1 for failure
  */
 int makeDirectories(char** pathArr, int pathSize, int client_sock) {
+    checkUSB();
     char status[SIZE] = {0};
 
     // Check valid directory name
@@ -494,6 +588,9 @@ int makeDirectories(char** pathArr, int pathSize, int client_sock) {
     if (send(client_sock, status, strlen(status), 0) < 0){
         printf("Can't send response to client!\n");
     }
+
+    free(dirPath1);
+    free(dirPath2);
     return 0;
 }
 
@@ -505,6 +602,7 @@ int makeDirectories(char** pathArr, int pathSize, int client_sock) {
  * @return int 0 for success, 1 for failure
  */
 int delFileOrDir(const char* path, int client_sock) {
+    checkUSB();
     char* finalPath1 = (char*)malloc(MAXPATHLEN);
     char* finalPath2 = (char*)malloc(MAXPATHLEN);
 
@@ -586,6 +684,12 @@ int delFileOrDir(const char* path, int client_sock) {
  */
 void cleanUp(FileSystemOp_t* op, int client_sock, int socket_desc) {
     // Free operation struct
+    free(op->operation);
+    free(op->path);
+    for (int i = 0; i < op->pathSize; i++) {
+        free(op->pathArray[i]);
+    }
+    free(op->pathArray);
     free(op);
     // Closing the socket
     printf("Closing connection.\n");
@@ -593,50 +697,7 @@ void cleanUp(FileSystemOp_t* op, int client_sock, int socket_desc) {
     close(socket_desc);
 }
 
-/**
- * @brief Check USB 1 and USB 2 drives.
- * Set the global variables if drives exist.
- * 
- * @return int 0 if at least 1 usb drive is present, otherwise 1 if nothing
- * is available
- */
-int checkUSB() {
-    // The USB drives mounted
-    char* usb1 = "/mnt/d/";
-    char* usb2 = "/mnt/e/";
 
-    USB1PATH = (char*)malloc(strlen(usb1) + sizeof(char));
-    USB2PATH = (char*)malloc(strlen(usb2) + sizeof(char));
-
-    struct stat sb;
-    // USB Drive #1
-    if (stat(usb1, &sb) == 0 && S_ISDIR(sb.st_mode)) {
-        printf("USB 1 is available!\n");
-        strncpy(USB1PATH, usb1, strlen(usb1));
-        printf("%s\n", USB1PATH);
-        USB1AVAIL = 1;
-    } else {
-        printf("USB 1 not available!\n");
-        USB1AVAIL = 0;
-    }
-
-    // USB Drive #2
-    if (stat(usb2, &sb) == 0 && S_ISDIR(sb.st_mode)) {
-        printf("USB 2 is available!\n");
-        strncpy(USB2PATH, usb2, strlen(usb2));
-        USB2AVAIL = 1;
-    } else {
-        printf("USB 2 not available!\n");
-        USB2AVAIL = 0;
-    }
-
-    // No USB drives available for storage
-    if (USB1AVAIL == 0 && USB2AVAIL == 0) {
-        return 1;
-    }
-    // At least one drive is available
-    return 0;
-}
 
 /**
  * @brief The entrypoint to the program
@@ -803,6 +864,9 @@ int main () {
     if (send(client_sock, server_message, strlen(server_message), 0) < 0){
         printf("Can't send response to client!\n");
     }
+
+    free(USB1PATH);
+    free(USB2PATH);
 
     cleanUp(op, client_sock, socket_desc);
     return 0;

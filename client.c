@@ -147,12 +147,17 @@ int rmDirOnServer(int socket_desc) {
  * @param theRequest 
  * @param socket_desc 
  */
-void cleanUp(FileSystemOp_t* theRequest, int socket_desc) {
-    // Free the malloced operation struct
-    free(theRequest);
-
+void cleanUp(FileSystemOp_t* op, int socket_desc) {
+    // Free operation struct
+    free(op->operation);
+    free(op->path);
+    for (int i = 0; i < op->pathSize; i++) {
+        free(op->pathArray[i]);
+    }
+    free(op->pathArray);
+    free(op);
     printf("Closing the socket.\n");
-    // Close the socket:
+    // Close the socket
     close(socket_desc);
 }
 
