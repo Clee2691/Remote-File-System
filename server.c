@@ -30,15 +30,14 @@ int checkUSB() {
     char* usb1 = "/mnt/d/";
     char* usb2 = "/mnt/e/";
 
-    USB1PATH = (char*)malloc(strlen(usb1) + sizeof(char));
-    USB2PATH = (char*)malloc(strlen(usb2) + sizeof(char));
+    USB1PATH = (char*)calloc(strlen(usb1) + sizeof(char), sizeof(char));
+    USB2PATH = (char*)calloc(strlen(usb2) + sizeof(char), sizeof(char));
 
     struct stat sb;
     // USB Drive #1
     if (stat(usb1, &sb) == 0 && S_ISDIR(sb.st_mode)) {
         printf("USB 1 is available!\n");
         strncpy(USB1PATH, usb1, strlen(usb1));
-        printf("%s\n", USB1PATH);
         USB1AVAIL = 1;
     } else {
         printf("USB 1 not available!\n");
@@ -95,8 +94,8 @@ struct stat getFileStats(char* fileName) {
 int sendFileStat(char* filePath, int socketFD) {
     checkUSB();
     char infoBuffer[SIZE] = {0};
-    char* combined1 = (char*)malloc(SIZE);
-    char* combined2 = (char*)malloc(SIZE);
+    char* combined1 = (char*)calloc(SIZE, sizeof(char));
+    char* combined2 = (char*)calloc(SIZE, sizeof(char));
     struct stat fileStat;
 
      // Both are available
@@ -140,7 +139,7 @@ int sendFileStat(char* filePath, int socketFD) {
         }
 
         // Clear out the data buffer
-        bzero(infoBuffer, SIZE);
+        memset(infoBuffer, '\0', sizeof(infoBuffer));
         return 1;
     }
 
@@ -203,7 +202,7 @@ int sendFileStat(char* filePath, int socketFD) {
     }
 
     // Clear out the data buffer
-    bzero(infoBuffer, SIZE);
+    memset(infoBuffer, '\0', sizeof(infoBuffer));
     free(combined1);
     free(combined2);
     return 0;
@@ -224,8 +223,8 @@ int sendFile(char* filePath, int socketFD) {
     char data[SIZE] = {0};
 
     // Combine the root to the filepath
-    char* combined1 = (char*)malloc(MAXPATHLEN);
-    char* combined2 = (char*)malloc(MAXPATHLEN);
+    char* combined1 = (char*)calloc(MAXPATHLEN, sizeof(char));
+    char* combined2 = (char*)calloc(MAXPATHLEN, sizeof(char));
 
     struct stat fileStat;
 
@@ -268,7 +267,7 @@ int sendFile(char* filePath, int socketFD) {
         char* message = "NOTFOUND";
         strcpy(data, message);
         send(socketFD, data, sizeof(data), 0);
-        bzero(data, SIZE);
+        memset(data, '\0', sizeof(data));
         return 1;
     }
 
@@ -278,7 +277,7 @@ int sendFile(char* filePath, int socketFD) {
         char* message = "NOTFILE";
         strcpy(data, message);
         send(socketFD, data, sizeof(data), 0);
-        bzero(data, SIZE);
+        memset(data, '\0', sizeof(data));
         return 1;
     }
 
@@ -298,7 +297,7 @@ int sendFile(char* filePath, int socketFD) {
     // Send the file size in bytes
     sprintf(data, "%ld", fileStat.st_size);
     send(socketFD, data, sizeof(data), 0);
-    bzero(data, SIZE);
+    memset(data, '\0', sizeof(data));
 
     // Loop through the file SIZE amounts at a time and
     // send to server
@@ -308,7 +307,7 @@ int sendFile(char* filePath, int socketFD) {
             return 1;
         }
         // Clear out the data buffer after each loop
-        bzero(data, SIZE);
+        memset(data, '\0', sizeof(data));
     }
     free(combined1);
     free(combined2);
@@ -355,6 +354,7 @@ int writeToFile(FILE* fp1, FILE* fp2, int clientSocket) {
     if (fp2 != NULL) {
         fprintf(fp2, "%s", byteBuffer);
     }
+    memset(byteBuffer, '\0', sizeof(byteBuffer));
     
     return 0;
 }
@@ -407,12 +407,12 @@ int putBytesToFile(char* pathName, char** pathArr, int pathSize, int socketFD) {
     int res;
 
     // Make the directory path
-    char* dirPath1 = (char*)malloc(MAXPATHLEN);
-    char* dirPath2 = (char*)malloc(MAXPATHLEN);
+    char* dirPath1 = (char*)calloc(MAXPATHLEN, sizeof(char));
+    char* dirPath2 = (char*)calloc(MAXPATHLEN, sizeof(char));
 
     // The path to the file
-    char* fullPath1 = (char*)malloc(MAXPATHLEN);
-    char* fullPath2 = (char*)malloc(MAXPATHLEN);
+    char* fullPath1 = (char*)calloc(MAXPATHLEN, sizeof(char));
+    char* fullPath2 = (char*)calloc(MAXPATHLEN, sizeof(char));
 
     // The file pointer
     FILE* fp1;
@@ -518,13 +518,14 @@ int makeDirectories(char** pathArr, int pathSize, int client_sock) {
         if (send(client_sock, status, strlen(status), 0) < 0){
             printf("Can't send response to client!\n");
         }
+        memset(status, '\0', sizeof(status));
         return 1;
     }
     
     struct stat dstat;
     // Make the directory path
-    char* dirPath1 = (char*)malloc(MAXPATHLEN);
-    char* dirPath2 = (char*)malloc(MAXPATHLEN);
+    char* dirPath1 = (char*)calloc(MAXPATHLEN, sizeof(char));
+    char* dirPath2 = (char*)calloc(MAXPATHLEN, sizeof(char));
 
     // Both are available
     if (USB1AVAIL == 1 && USB2AVAIL == 1) {
@@ -540,7 +541,7 @@ int makeDirectories(char** pathArr, int pathSize, int client_sock) {
             if (send(client_sock, status, strlen(status), 0) < 0){
                 printf("Can't send response to client!\n");
             }
-
+            memset(status, '\0', sizeof(status));
             return 1;
         }
         mkDirPath(dirPath1);
@@ -559,7 +560,7 @@ int makeDirectories(char** pathArr, int pathSize, int client_sock) {
             if (send(client_sock, status, strlen(status), 0) < 0){
                 printf("Can't send response to client!\n");
             }
-
+            memset(status, '\0', sizeof(status));
             return 1;
         }
         mkDirPath(dirPath1);
@@ -576,7 +577,7 @@ int makeDirectories(char** pathArr, int pathSize, int client_sock) {
             if (send(client_sock, status, strlen(status), 0) < 0){
                 printf("Can't send response to client!\n");
             }
-
+            memset(status, '\0', sizeof(status));
             return 1;
         }
 
@@ -589,6 +590,7 @@ int makeDirectories(char** pathArr, int pathSize, int client_sock) {
         printf("Can't send response to client!\n");
     }
 
+    memset(status, '\0', sizeof(status));
     free(dirPath1);
     free(dirPath2);
     return 0;
@@ -603,8 +605,8 @@ int makeDirectories(char** pathArr, int pathSize, int client_sock) {
  */
 int delFileOrDir(const char* path, int client_sock) {
     checkUSB();
-    char* finalPath1 = (char*)malloc(MAXPATHLEN);
-    char* finalPath2 = (char*)malloc(MAXPATHLEN);
+    char* finalPath1 = (char*)calloc(MAXPATHLEN, sizeof(char));
+    char* finalPath2 = (char*)calloc(MAXPATHLEN, sizeof(char));
 
     int res;
 
@@ -646,6 +648,7 @@ int delFileOrDir(const char* path, int client_sock) {
         if (send(client_sock, status, strlen(status), 0) < 0){
             printf("Can't send response to client!\n");
         }
+        memset(status, '\0', sizeof(status));
         return 1;
     } else if (res != 0 && errno == ENOENT) {
         printf("Directory or file not found!\n");
@@ -653,6 +656,7 @@ int delFileOrDir(const char* path, int client_sock) {
         if (send(client_sock, status, strlen(status), 0) < 0){
             printf("Can't send response to client!\n");
         }
+        memset(status, '\0', sizeof(status));
         return 1;
     } else if (res != 0 && errno == EBUSY) {
         printf("File or Directory is in use! Cannot remove!\n");
@@ -660,6 +664,7 @@ int delFileOrDir(const char* path, int client_sock) {
         if (send(client_sock, status, strlen(status), 0) < 0){
             printf("Can't send response to client!\n");
         }
+        memset(status, '\0', sizeof(status));
         return 1;
     }
 
@@ -668,7 +673,7 @@ int delFileOrDir(const char* path, int client_sock) {
     if (send(client_sock, status, strlen(status), 0) < 0){
         printf("Can't send response to client!\n");
     }
-
+    memset(status, '\0', sizeof(status));
     free(finalPath1);
     free(finalPath2);
 
@@ -695,6 +700,15 @@ void cleanUp(FileSystemOp_t* op, int client_sock, int socket_desc) {
     printf("Closing connection.\n");
     close(client_sock);
     close(socket_desc);
+}
+
+void freeOperation(FileSystemOp_t* op) {
+    // Free operation struct
+    free(op->pathArray[0]);
+    free(op->pathArray);
+    free(op->operation);
+    free(op->path);
+    free(op);
 }
 
 
@@ -761,51 +775,106 @@ int main () {
 
     printf("Done with binding\n");
 
-    // Listen for clients:
-    if(listen(socket_desc, 1) < 0){
-        printf("Error while listening\n");
-        return 1;
-    }
-    printf("\nListening for incoming connections.....\n");
-    
-    // Accept an incoming connection:
-    client_size = sizeof(client_addr);
-    client_sock = accept(socket_desc, (struct sockaddr*)&client_addr, &client_size);
-    
-    if (client_sock < 0){
-        printf("Can't accept\n");
-        return 1;
-    }
-    printf("Client connected at IP: %s and port: %i\n", 
-            inet_ntoa(client_addr.sin_addr), 
-            ntohs(client_addr.sin_port));
-    
-    
-    //=============================
+    FileSystemOp_t* op;
 
-    //    Get client's action
+    while(1) {
+        // Listen for clients:
+        if(listen(socket_desc, 1) < 0){
+            printf("Error while listening\n");
+            return 1;
+        }
+        printf("\nListening for incoming connections.....\n");
+        
+        // Accept an incoming connection:
+        client_size = sizeof(client_addr);
+        client_sock = accept(socket_desc, (struct sockaddr*)&client_addr, &client_size);
+        
+        if (client_sock < 0){
+            printf("Can't accept\n");
+            return 1;
+        }
+        printf("Client connected at IP: %s and port: %i\n", 
+                inet_ntoa(client_addr.sin_addr), 
+                ntohs(client_addr.sin_port));
+        
+        
+        //=============================
 
-    //=============================
+        //    Get client's action
 
-    // Get the initial client request
-    if (recv(client_sock, client_message, sizeof(client_message), 0) < 0){
-        printf("Couldn't receive client message\n");
-        return 1;
-    }
-    printf("Request from client: %s\n", client_message);
+        //=============================
 
-    // 2D array for list of strings for the path
-    char** patharr = (char**)malloc(MAXPATHLEN);
+        // Get the initial client request
+        if (recv(client_sock, client_message, sizeof(client_message), 0) < 0){
+            printf("Couldn't receive client message\n");
+            return 1;
+        }
+        printf("Request from client: %s\n", client_message);
 
-    FileSystemOp_t* op = parseClientInput(client_message, patharr);
+        // 2D array for list of strings for the path
+        char** patharr = (char**)calloc(MAXPATHLEN, sizeof(char));
 
-    char* message;
+        op = parseClientInput(client_message, patharr);
 
-    // Invalid parsed operation
-    if(op == NULL) {
-        printf("Invalid client input. Improperly formatted or path name too long!\n");
-        message = "Invalid client input. Improperly formatted or path name too long!\n";
+        char* message;
 
+        // Invalid parsed operation
+        if(op == NULL) {
+            printf("Invalid client input. Improperly formatted or path name too long!\n");
+            message = "Invalid client input. Improperly formatted or path name too long!\n";
+
+            // Copy message into the buffer
+            strcpy(server_message, message);
+
+            // Send the response buffer to the client
+            if (send(client_sock, server_message, strlen(server_message), 0) < 0){
+                printf("Can't send response to client!\n");
+            }
+            memset(server_message, '\0', sizeof(server_message));
+            memset(client_message, '\0', sizeof(client_message));
+            // cleanUp(op, client_sock, socket_desc);
+            continue;
+        }
+
+        //================================
+
+        // Dispatch appropriate function
+
+        //================================
+
+        int res = -1;
+
+        // Check the operation against supported operations
+        if (strncmp("GET", op->operation, strlen("GET")) == 0) {
+            printf("GET Request\n");
+            res = sendFile(op->path, client_sock);
+        } else if (strncmp("INFO", op->operation, strlen("INFO")) == 0) {
+            printf("INFO Request\n");
+            res = sendFileStat(op->path, client_sock);
+        } else if (strncmp("PUT", op->operation, strlen("PUT")) == 0) {
+            printf("PUT Request\n");
+            res = putBytesToFile(op->path, op->pathArray, op->pathSize, client_sock);
+        } else if (strncmp("MD", op->operation, strlen("MD")) == 0) {
+            printf("MD Request\n");
+            res = makeDirectories(op->pathArray, op->pathSize, client_sock);
+        } else if (strncmp("RM", op->operation, strlen("RM")) == 0) {
+            printf("RM Request\n");
+            res = delFileOrDir(op->path, client_sock);
+        } else {
+            printf("Unsupported action!\n");
+        }
+
+        if (res == -1) {
+            printf("Client didn't respond with supported action!\n");
+            message = "Unknown request!\n";
+        } else if (res == 1) {
+            printf("Error with %s request!\n", op->operation);
+            message = "Error with request\n";
+        } else {
+            printf("Successful %s request!\n", op->operation);
+            message = "Successful request!";
+        }
+        
         // Copy message into the buffer
         strcpy(server_message, message);
 
@@ -813,56 +882,10 @@ int main () {
         if (send(client_sock, server_message, strlen(server_message), 0) < 0){
             printf("Can't send response to client!\n");
         }
-
-        cleanUp(op, client_sock, socket_desc);
-        return 1;
-    }
-
-    //================================
-
-    // Dispatch appropriate function
-
-    //================================
-
-    int res = -1;
-
-    // Check the operation against supported operations
-    if (strncmp("GET", op->operation, strlen("GET")) == 0) {
-        printf("GET Request\n");
-        res = sendFile(op->path, client_sock);
-    } else if (strncmp("INFO", op->operation, strlen("INFO")) == 0) {
-        printf("INFO Request\n");
-        res = sendFileStat(op->path, client_sock);
-    } else if (strncmp("PUT", op->operation, strlen("PUT")) == 0) {
-        printf("PUT Request\n");
-        res = putBytesToFile(op->path, op->pathArray, op->pathSize, client_sock);
-    } else if (strncmp("MD", op->operation, strlen("MD")) == 0) {
-        printf("MD Request\n");
-        res = makeDirectories(op->pathArray, op->pathSize, client_sock);
-    } else if (strncmp("RM", op->operation, strlen("RM")) == 0) {
-        printf("RM Request\n");
-        res = delFileOrDir(op->path, client_sock);
-    } else {
-        printf("Unsupported action!\n");
-    }
-
-    if (res == -1) {
-        printf("Client didn't respond with supported action!\n");
-        message = "Unknown request!\n";
-    } else if (res == 1) {
-        printf("Error with %s request!\n", op->operation);
-        message = "Error with request\n";
-    } else {
-        printf("Successful %s request!\n", op->operation);
-        message = "Successful request!";
-    }
-    
-    // Copy message into the buffer
-    strcpy(server_message, message);
-
-    // Send the response buffer to the client
-    if (send(client_sock, server_message, strlen(server_message), 0) < 0){
-        printf("Can't send response to client!\n");
+        memset(server_message, '\0', sizeof(server_message));
+        memset(client_message, '\0', sizeof(client_message));
+        freeOperation(op);
+        close(client_sock);
     }
 
     free(USB1PATH);

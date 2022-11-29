@@ -23,7 +23,7 @@ int getFileFromServer(int socket_desc, char** patharr, int pathsize) {
 
     // Combine the root and the file name
     // Download all files into the downloads folder
-    char* combined = (char*)malloc(MAXPATHLEN);
+    char* combined = (char*)calloc(MAXPATHLEN, sizeof(char));
     strcat(combined, CLIENTROOT);
     strcat(combined, "downloads/");
     strcat(combined, patharr[pathsize - 1]);
@@ -49,7 +49,7 @@ int getInfoFromServer(char* thePath, int socket_desc) {
         return 1;
     }
     printf("\nInformation:\n\n%s", fileInfoBuffer);
-    bzero(fileInfoBuffer, SIZE);
+    memset(fileInfoBuffer, '\0', sizeof(fileInfoBuffer));
     return 0;
 }
 
@@ -72,7 +72,7 @@ int putBytesToServer(char** patharr, int psize, int socket_desc) {
         printf("Unable to send request.\n");
         return 1;
     }
-    bzero(bytesToPut, SIZE);
+    memset(bytesToPut, '\0', sizeof(bytesToPut));
 
     return 0;
 }
@@ -103,7 +103,7 @@ int makeDirOnServer(int socket_desc) {
         res = 1;
     }
 
-    bzero(mkdirStatus, SIZE);
+    memset(mkdirStatus, '\0', sizeof(mkdirStatus));
     return res;
 }
 
@@ -137,7 +137,7 @@ int rmDirOnServer(int socket_desc) {
         res = 1;
     }
     
-    bzero(rmdirStatus, SIZE);
+    memset(rmdirStatus, '\0', sizeof(rmdirStatus));
     return res;
 }
 
@@ -151,9 +151,7 @@ void cleanUp(FileSystemOp_t* op, int socket_desc) {
     // Free operation struct
     free(op->operation);
     free(op->path);
-    for (int i = 0; i < op->pathSize; i++) {
-        free(op->pathArray[i]);
-    }
+    free(op->pathArray[0]);
     free(op->pathArray);
     free(op);
     printf("Closing the socket.\n");
@@ -219,7 +217,7 @@ int main (void) {
     }
 
     // 2D array for list of strings for the path
-    char** patharr = (char**)malloc(MAXPATHLEN);
+    char** patharr = (char**)calloc(MAXPATHLEN, sizeof(char));
 
     // Parse client input
     FileSystemOp_t* theRequest = parseClientInput(client_message, patharr);

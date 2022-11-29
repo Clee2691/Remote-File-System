@@ -39,12 +39,12 @@ FileSystemOp_t* parseClientInput(char* input, char** patharr) {
 
     theOperation->operation = operation;
     
-    char* path = (char*)malloc(MAXPATHLEN);
+    char* path = (char*)calloc(MAXPATHLEN, sizeof(char));
     strcpy(path, strtok_r(rest, " ", &rest));
     theOperation->path = path;
 
     // Make a copy of the path to manipulate
-    char* pathCopy = (char*)malloc(MAXPATHLEN);
+    char* pathCopy = (char*)calloc(MAXPATHLEN, sizeof(char));
     strncpy(pathCopy, theOperation->path, strlen(theOperation->path));
     
     int pathSize = parseFilePath(pathCopy, patharr);
