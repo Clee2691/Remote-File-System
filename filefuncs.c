@@ -57,9 +57,9 @@ FileSystemOp_t* parseClientInput(char* input, char** patharr) {
     strncpy(pathCopy, theOperation->path, strlen(theOperation->path));
     
     int pathSize = parseFilePath(pathCopy, patharr);
-    
+
     // Check to see that the path size isn't too long
-    if (theOperation->pathSize > 10) {
+    if (pathSize > 10) {
         printf("Path name is too long!\n");
         return NULL;
     }
