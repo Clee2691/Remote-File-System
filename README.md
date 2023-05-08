@@ -1,4 +1,4 @@
-# Practicum #2
+# Remote File System
 
 A simple remote file system supporting mutliple requests from multiple clients using multiprocessing.
 
